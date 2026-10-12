@@ -6,6 +6,7 @@ import posixpath
 import re
 from dataclasses import dataclass, field
 
+from repowiki.core.churn import file_churn, module_hotspots
 from repowiki.core.graph import DependencyGraph, _get_module
 from repowiki.core.models import ProjectContext, WikiData
 
@@ -66,7 +67,7 @@ class WikiBuilder:
 
         # 2b. knowledge cards: one compact card per module, for choosing where
         # to start before opening a full page
-        cards_md = self._build_cards_page(wiki_data, graph)
+        cards_md = self._build_cards_page(wiki_data, graph, project.root)
         if cards_md:
             pages.append(WikiPage(id="cards", title="Knowledge Cards", content=cards_md, order=2))
             sidebar.append(SidebarItem(title="Knowledge Cards", page_id="cards"))
@@ -200,13 +201,14 @@ class WikiBuilder:
 
         return "\n".join(lines)
 
-    def _build_cards_page(self, wiki_data: WikiData, graph) -> str:
+    def _build_cards_page(self, wiki_data: WikiData, graph, root: str) -> str:
         # one compact card per module: what it is for, what it exposes, what
-        # it touches, and which file is the way in; enough to pick a starting
-        # point before opening the page
+        # it touches, which file is the way in, and where the churn is; enough
+        # to pick a starting point before opening the page
         cards = [m for m in wiki_data.modules if m.purpose or m.files]
         if not cards:
             return ""
+        churn, churn_commits = file_churn(root)
         entries = graph.get_entry_points()
         lines = [
             "# Knowledge Cards\n",
@@ -236,6 +238,13 @@ class WikiBuilder:
                 more = f" +{len(mod_entries) - len(shown)} more" if len(mod_entries) > len(shown) else ""
                 lines.append(
                     "Entry: " + ", ".join(f"`{e}`" for e in shown) + more + "\n"
+                )
+            hot = module_hotspots(churn, churn_commits, mod.name)
+            if hot:
+                lines.append(
+                    "Hot (most commits): "
+                    + ", ".join(f"`{p}` ({n})" for p, n in hot)
+                    + "\n"
                 )
             if mod.relationships:
                 rels = ", ".join(f"`{r.source}` → `{r.target}`" for r in mod.relationships[:4])
