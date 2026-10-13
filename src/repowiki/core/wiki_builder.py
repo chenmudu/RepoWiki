@@ -210,6 +210,11 @@ class WikiBuilder:
             return ""
         churn, churn_commits = file_churn(root)
         entries = graph.get_entry_points()
+        # a module caught in an import cycle gets a heads-up on its card; that
+        # loop is exactly the trap a newcomer reads cards to avoid
+        cycle_mods = {
+            _get_module(f) for cycle in graph.find_circular_dependencies() for f in cycle
+        }
         lines = [
             "# Knowledge Cards\n",
             "One card per module: its purpose, its public surface, its",
@@ -220,6 +225,11 @@ class WikiBuilder:
             lines.append(f"### `{mod.name}`\n")
             if mod.purpose:
                 lines.append(f"> {mod.purpose}\n")
+            if mod.name in cycle_mods:
+                lines.append(
+                    "Cycle: files here import each other in a loop, so read them "
+                    f"as a set; see [Dependencies]({_rel_href('cards', 'dependencies')}).\n"
+                )
             facts: list[str] = []
             if mod.files:
                 facts.append(f"{len(mod.files)} files")

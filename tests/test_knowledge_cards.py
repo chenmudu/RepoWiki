@@ -184,3 +184,45 @@ def test_card_entry_line_works_for_src_layout() -> None:
     cards = wiki.get_page("cards")
     assert cards is not None
     assert "Entry: [`src/mypkg/cli.py`](modules/mypkg.md)" in cards.content
+
+
+def test_card_flags_a_module_caught_in_an_import_cycle() -> None:
+    # alpha and beta import each other, so both cards carry the cycle line
+    project = ProjectContext(
+        name="demo-cycle",
+        root="/tmp/demo-cycle",
+        files=[
+            FileInfo(
+                path="alpha/core.py",
+                size=30,
+                language="python",
+                lines=2,
+                content="import beta.runner\nX = 1\n",
+            ),
+            FileInfo(
+                path="beta/runner.py",
+                size=30,
+                language="python",
+                lines=2,
+                content="import alpha.core\nY = 2\n",
+            ),
+        ],
+    )
+    graph = DependencyGraph.build_from_project(project)
+    wiki = WikiBuilder().build(project, _wiki_data(), graph)
+    cards = wiki.get_page("cards")
+    assert cards is not None
+    alpha_section = cards.content.split("### `alpha`", 1)[1]
+    beta_section = cards.content.split("### `beta`", 1)[1]
+    assert "Cycle: files here import each other in a loop" in alpha_section
+    assert "Cycle: files here import each other in a loop" in beta_section
+    # the line points at the dependencies page, where the cycle is listed
+    assert "[Dependencies](dependencies.md)" in cards.content
+
+
+def test_card_cycle_line_stays_off_acyclic_modules() -> None:
+    # the shared fixture is one-way (alpha imports beta), so no card shows it
+    wiki = _build()
+    cards = wiki.get_page("cards")
+    assert cards is not None
+    assert "Cycle:" not in cards.content
