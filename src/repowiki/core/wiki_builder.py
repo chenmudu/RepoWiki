@@ -62,7 +62,9 @@ class WikiBuilder:
         arch = wiki_data.architecture
         if arch.architecture_type:
             arch_md = self._build_architecture_page(arch)
-            pages.append(WikiPage(id="architecture", title="Architecture", content=arch_md, order=1))
+            pages.append(
+                WikiPage(id="architecture", title="Architecture", content=arch_md, order=1)
+            )
             sidebar.append(SidebarItem(title="Architecture", page_id="architecture"))
 
         # 2b. knowledge cards: one compact card per module, for choosing where
@@ -72,15 +74,27 @@ class WikiBuilder:
             pages.append(WikiPage(id="cards", title="Knowledge Cards", content=cards_md, order=2))
             sidebar.append(SidebarItem(title="Knowledge Cards", page_id="cards"))
 
+        # 2c. test map: which test files import which source files, plus the
+        # files nothing imports; deterministic, like the call/data-flow views
+        testmap_md = self._build_testmap_page(project)
+        if testmap_md:
+            pages.append(WikiPage(id="tests", title="Test Map", content=testmap_md, order=3))
+            sidebar.append(SidebarItem(title="Test Map", page_id="tests"))
+
         # 3. module pages
         module_sidebar = SidebarItem(title="Modules", page_id="", children=[])
         for i, mod in enumerate(wiki_data.modules):
             mod_id = f"modules/{mod.name}"
             mod_md = self._build_module_page(mod)
-            pages.append(WikiPage(
-                id=mod_id, title=mod.name, content=mod_md,
-                parent_id="modules", order=i,
-            ))
+            pages.append(
+                WikiPage(
+                    id=mod_id,
+                    title=mod.name,
+                    content=mod_md,
+                    parent_id="modules",
+                    order=i,
+                )
+            )
             module_sidebar.children.append(SidebarItem(title=mod.name, page_id=mod_id))
         if module_sidebar.children:
             sidebar.append(module_sidebar)
@@ -89,14 +103,18 @@ class WikiBuilder:
         guide = wiki_data.reading_guide
         if guide.steps:
             guide_md = self._build_reading_guide_page(guide)
-            pages.append(WikiPage(id="reading-guide", title="Reading Guide", content=guide_md, order=10))
+            pages.append(
+                WikiPage(id="reading-guide", title="Reading Guide", content=guide_md, order=10)
+            )
             sidebar.append(SidebarItem(title="Reading Guide", page_id="reading-guide"))
 
         # 5. dependency graph
         mermaid = graph.to_mermaid()
         if mermaid:
             dep_md = self._build_dependency_page(graph, mermaid)
-            pages.append(WikiPage(id="dependencies", title="Dependencies", content=dep_md, order=11))
+            pages.append(
+                WikiPage(id="dependencies", title="Dependencies", content=dep_md, order=11)
+            )
             sidebar.append(SidebarItem(title="Dependencies", page_id="dependencies"))
 
         # 6. symbol index
@@ -135,9 +153,15 @@ class WikiBuilder:
             cov = project.coverage
             note = f"> **Partial coverage:** this wiki was built from {cov.summary_line()}."
             if cov.oversized:
-                note += " Oversized files left out: " + ", ".join(f"`{p}`" for p in cov.oversized) + "."
+                note += (
+                    " Oversized files left out: " + ", ".join(f"`{p}`" for p in cov.oversized) + "."
+                )
             if cov.skipped_dirs:
-                note += " Excluded directories: " + ", ".join(f"`{d}`" for d in cov.skipped_dirs[:5]) + "."
+                note += (
+                    " Excluded directories: "
+                    + ", ".join(f"`{d}`" for d in cov.skipped_dirs[:5])
+                    + "."
+                )
             lines.append(note + " Pages below describe only the scanned subset.\n")
 
         if overview.tech_stack:
@@ -223,9 +247,7 @@ class WikiBuilder:
         entries = graph.get_entry_points()
         # a module caught in an import cycle gets a heads-up on its card; that
         # loop is exactly the trap a newcomer reads cards to avoid
-        cycle_mods = {
-            _get_module(f) for cycle in graph.find_circular_dependencies() for f in cycle
-        }
+        cycle_mods = {_get_module(f) for cycle in graph.find_circular_dependencies() for f in cycle}
         lines = [
             "# Knowledge Cards\n",
             "One card per module: its purpose, its public surface, its",
@@ -256,16 +278,16 @@ class WikiBuilder:
             mod_entries = [e for e in entries if _get_module(e) == mod.name]
             if mod_entries:
                 shown = mod_entries[:3]
-                more = f" +{len(mod_entries) - len(shown)} more" if len(mod_entries) > len(shown) else ""
-                lines.append(
-                    "Entry: " + ", ".join(f"`{e}`" for e in shown) + more + "\n"
+                more = (
+                    f" +{len(mod_entries) - len(shown)} more"
+                    if len(mod_entries) > len(shown)
+                    else ""
                 )
+                lines.append("Entry: " + ", ".join(f"`{e}`" for e in shown) + more + "\n")
             hot = module_hotspots(churn, churn_commits, mod.name)
             if hot:
                 lines.append(
-                    "Hot (most commits): "
-                    + ", ".join(f"`{p}` ({n})" for p, n in hot)
-                    + "\n"
+                    "Hot (most commits): " + ", ".join(f"`{p}` ({n})" for p, n in hot) + "\n"
                 )
             if mod.relationships:
                 rels = ", ".join(f"`{r.source}` → `{r.target}`" for r in mod.relationships[:4])
@@ -304,6 +326,54 @@ class WikiBuilder:
                 lines.append(f"- `{r.source}` → `{r.target}`: {r.description}")
             lines.append("")
 
+        return "\n".join(lines)
+
+    def _build_testmap_page(self, project: ProjectContext) -> str:
+        # which test files import which source files, and which files no test
+        # reaches; an orientation aid, not a coverage report — dynamic loading
+        # is not chased, so "untested" means "nothing imports it from a test"
+        from .testmap import build_test_map
+
+        m = build_test_map(project)
+        if m.test_file_count == 0:
+            return ""
+        lines = [
+            "# Test Map\n",
+            f"{m.test_file_count} test files reach {m.reached_source_count} of "
+            f"{m.reached_source_count + len(m.untested_sources)} source files. "
+            "Reach means a test imports the file; dynamic loading is not chased, "
+            "so this is where to look, not a coverage claim.\n",
+        ]
+        rows = sorted(m.by_source.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        if rows:
+            lines.append("## Source files, by tests that reach them\n")
+            lines.append("| Source | Tests | Symbols imported |")
+            lines.append("| --- | --- | --- |")
+            for src, refs in rows:
+                tests = ", ".join(f"`{r.test}`" for r in refs)
+                symbols = sorted({s for r in refs for s in r.symbols})
+                sym = ", ".join(f"`{s}`" for s in symbols[:6])
+                if len(symbols) > 6:
+                    sym += f" +{len(symbols) - 6} more"
+                lines.append(f"| `{src}` | {tests} | {sym or '—'} |")
+            lines.append("")
+        if m.untested_sources:
+            lines.append("## Sources no test file imports\n")
+            shown = m.untested_sources[:40]
+            more = len(m.untested_sources) - len(shown)
+            lines.append(
+                ", ".join(f"`{p}`" for p in shown) + (f" (+{more} more)" if more else "") + "\n"
+            )
+        if m.unreferencing_tests:
+            lines.append("## Test files that reach no source file\n")
+            lines.append(
+                "Fixture helpers or fully mocked tests; open them before trusting their names.\n"
+            )
+            shown = m.unreferencing_tests[:40]
+            more = len(m.unreferencing_tests) - len(shown)
+            lines.append(
+                ", ".join(f"`{p}`" for p in shown) + (f" (+{more} more)" if more else "") + "\n"
+            )
         return "\n".join(lines)
 
     def _build_symbol_index_page(self, wiki_data: WikiData) -> str:
