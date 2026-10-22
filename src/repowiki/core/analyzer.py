@@ -95,6 +95,13 @@ class Analyzer:
 
         architecture.call_graph = to_mermaid(build_call_edges(project))
 
+        # 4c. deterministic data-flow view, same guarantees: who creates each
+        # project class, who receives it
+        from .dataflow import build_dataflow_edges
+        from .dataflow import to_mermaid as dataflow_to_mermaid
+
+        architecture.data_flow_graph = dataflow_to_mermaid(build_dataflow_edges(project))
+
         # 5. generate reading guide (needs module summaries + rankings placeholder)
         progress("Creating reading guide...")
         reading_guide = await self._generate_reading_guide(project, module_docs, tree_hash)

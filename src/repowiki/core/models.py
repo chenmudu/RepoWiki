@@ -134,6 +134,10 @@ class ArchitectureDiagram(BaseModel):
     # deterministic AST-derived Python call graph (no LLM); empty when the
     # project has no Python sources or no resolvable in-project calls
     call_graph: str = ""
+    # deterministic AST-derived data-flow view (no LLM): for each project
+    # class, which functions create it and which receive it; empty when
+    # nothing resolvable
+    data_flow_graph: str = ""
 
 
 class ReadingStep(BaseModel):

@@ -195,6 +195,17 @@ class WikiBuilder:
             )
             lines.append(f"```mermaid\n{arch.call_graph}\n```\n")
 
+        if arch.data_flow_graph:
+            lines.append("## Data Flow Graph\n")
+            lines.append(
+                "Deterministic view built from the Python AST: for each class "
+                "defined in the project, which functions create it and which "
+                "functions receive it. Only explicit annotations and direct "
+                "constructor calls count; factories and duck typing are out of "
+                "scope.\n"
+            )
+            lines.append(f"```mermaid\n{arch.data_flow_graph}\n```\n")
+
         if arch.data_flow:
             lines.append("## Data Flow\n")
             lines.append(f"{arch.data_flow}\n")
