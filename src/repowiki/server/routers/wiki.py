@@ -68,6 +68,23 @@ async def get_file(project_id: str, file_path: str):
     return {"error": f"File '{file_path}' not found"}
 
 
+@router.get("/project/{project_id}/cards")
+async def get_cards(project_id: str):
+    """get the structured knowledge cards (same data the cards page renders)."""
+    import dataclasses
+
+    projects = get_projects()
+    proj = projects.get(project_id)
+    if not proj or not proj.get("wiki"):
+        return {"error": "Wiki not ready"}
+
+    wiki = proj["wiki"]
+    return {
+        "project_name": wiki.project_name,
+        "cards": [dataclasses.asdict(card) for card in getattr(wiki, "cards", [])],
+    }
+
+
 @router.get("/project/{project_id}/graph")
 async def get_graph(project_id: str):
     """get the dependency graph as nodes + edges."""

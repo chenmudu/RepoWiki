@@ -226,3 +226,53 @@ def test_card_cycle_line_stays_off_acyclic_modules() -> None:
     cards = wiki.get_page("cards")
     assert cards is not None
     assert "Cycle:" not in cards.content
+
+
+def test_wiki_object_carries_structured_cards_matching_the_page() -> None:
+    wiki = _build()
+    assert [c.name for c in wiki.cards] == ["alpha", "beta"]
+    alpha = wiki.cards[0]
+    assert alpha.purpose == "alpha package"
+    assert alpha.file_count == 1
+    assert alpha.key_symbols == ["AlphaEngine", "start"]
+    assert alpha.extra_symbols == 0
+    assert alpha.key_concepts == ["Engine lifecycle"]
+    assert alpha.entry_files == ["alpha/core.py"]
+    assert alpha.in_cycle is False
+    assert alpha.relationships == [("alpha", "beta")]
+    assert alpha.page_id == "modules/alpha"
+    # the beta card has no entry-point file, matching the markdown omission
+    assert wiki.cards[1].entry_files == []
+
+
+def test_empty_wiki_carries_no_cards() -> None:
+    assert _build(WikiData(overview=ProjectOverview(name="demo"))).cards == []
+
+
+def test_card_flags_a_module_in_an_import_cycle() -> None:
+    project = ProjectContext(
+        name="cyc",
+        root="/tmp/cyc",
+        files=[
+            FileInfo(
+                path="a/one.py", size=10, language="python", lines=1, content="import b.two\n"
+            ),
+            FileInfo(
+                path="b/two.py", size=10, language="python", lines=1, content="import a.one\n"
+            ),
+        ],
+    )
+    graph = DependencyGraph.build_from_project(project)
+    data = WikiData(
+        overview=ProjectOverview(name="cyc"),
+        modules=[
+            ModuleDoc(name="a", purpose="a package", files=[FileDoc(path="a/one.py", purpose="")]),
+            ModuleDoc(name="b", purpose="b package", files=[FileDoc(path="b/two.py", purpose="")]),
+        ],
+    )
+    wiki = WikiBuilder().build(project, data, graph)
+    by_name = {c.name: c for c in wiki.cards}
+    assert by_name["a"].in_cycle and by_name["b"].in_cycle
+    cards_page = wiki.get_page("cards")
+    assert cards_page is not None
+    assert cards_page.content.count("Cycle: files here import each other") == 2

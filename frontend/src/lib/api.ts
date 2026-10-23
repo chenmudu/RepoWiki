@@ -159,6 +159,32 @@ export async function getRepoMap(projectId: string, top = 50): Promise<RepoMap> 
   return res.json();
 }
 
+export interface ModuleCard {
+  name: string;
+  purpose: string;
+  file_count: number;
+  key_symbols: string[];
+  extra_symbols: number;
+  key_concepts: string[];
+  entry_files: string[];
+  extra_entries: number;
+  in_cycle: boolean;
+  hotspots: [string, number][];
+  relationships: [string, string][];
+  page_id: string;
+}
+
+export interface CardsResponse {
+  project_name: string;
+  cards: ModuleCard[];
+  error?: string;
+}
+
+export async function getCards(projectId: string): Promise<CardsResponse> {
+  const res = await fetch(`${BASE}/project/${projectId}/cards`, { headers: getHeaders() });
+  return res.json();
+}
+
 export interface DiffEntry {
   path: string;
   change: string; // M / A / D / R

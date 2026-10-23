@@ -9,9 +9,10 @@ interface Props {
   onHome: () => void;
   onMap?: () => void;
   onDiff?: () => void;
+  onCards?: () => void;
 }
 
-export default function WikiSidebar({ sidebar, currentPageId, projectName, onNavigate, onChat, onHome, onMap, onDiff }: Props) {
+export default function WikiSidebar({ sidebar, currentPageId, projectName, onNavigate, onChat, onHome, onMap, onDiff, onCards }: Props) {
   return (
     <aside className="w-64 bg-slate-50 border-r border-slate-200 flex flex-col h-full shrink-0">
       <div className="px-4 py-4 border-b border-slate-200">
@@ -58,7 +59,7 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
       </nav>
 
       <div className="border-t border-slate-200 p-3 space-y-2">
-        {(onMap || onDiff) && (
+        {(onMap || onDiff || onCards) && (
           <div className="flex gap-2">
             {onMap && (
               <button
@@ -74,6 +75,14 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
                 className="flex-1 px-2 py-1.5 border border-slate-300 text-slate-600 rounded-md text-xs font-medium hover:bg-slate-100 transition-colors"
               >
                 Diff Review
+              </button>
+            )}
+            {onCards && (
+              <button
+                onClick={onCards}
+                className="flex-1 px-2 py-1.5 border border-slate-300 text-slate-600 rounded-md text-xs font-medium hover:bg-slate-100 transition-colors"
+              >
+                Cards
               </button>
             )}
           </div>

@@ -21,6 +21,28 @@ class WikiPage:
 
 
 @dataclass
+class ModuleCard:
+    """one structured knowledge card per module.
+
+    The markdown cards page renders from this same list, so the web cards view
+    and the exported wiki never drift (#10).
+    """
+
+    name: str
+    purpose: str = ""
+    file_count: int = 0
+    key_symbols: list[str] = field(default_factory=list)
+    extra_symbols: int = 0
+    key_concepts: list[str] = field(default_factory=list)
+    entry_files: list[str] = field(default_factory=list)
+    extra_entries: int = 0
+    in_cycle: bool = False
+    hotspots: list[tuple[str, int]] = field(default_factory=list)
+    relationships: list[tuple[str, str]] = field(default_factory=list)
+    page_id: str = ""
+
+
+@dataclass
 class SidebarItem:
     title: str
     page_id: str
@@ -32,6 +54,7 @@ class Wiki:
     pages: list[WikiPage] = field(default_factory=list)
     sidebar: list[SidebarItem] = field(default_factory=list)
     project_name: str = ""
+    cards: list[ModuleCard] = field(default_factory=list)
 
     def get_page(self, page_id: str) -> WikiPage | None:
         for p in self.pages:
@@ -68,10 +91,14 @@ class WikiBuilder:
             sidebar.append(SidebarItem(title="Architecture", page_id="architecture"))
 
         # 2b. knowledge cards: one compact card per module, for choosing where
-        # to start before opening a full page
-        cards_md = self._build_cards_page(wiki_data, graph, project.root)
-        if cards_md:
-            pages.append(WikiPage(id="cards", title="Knowledge Cards", content=cards_md, order=2))
+        # to start before opening a full page. The structured list is computed
+        # once and kept on the wiki object; the markdown page renders from it.
+        cards = self._collect_cards(wiki_data, graph, project.root)
+        if cards:
+            wiki_cards_md = self._build_cards_page(cards)
+            pages.append(
+                WikiPage(id="cards", title="Knowledge Cards", content=wiki_cards_md, order=2)
+            )
             sidebar.append(SidebarItem(title="Knowledge Cards", page_id="cards"))
 
         # 2c. test map: which test files import which source files, plus the
@@ -124,7 +151,7 @@ class WikiBuilder:
             sidebar.append(SidebarItem(title="Symbol Index", page_id="symbols"))
 
         self._link_pages(pages, wiki_data)
-        return Wiki(pages=pages, sidebar=sidebar, project_name=project.name)
+        return Wiki(pages=pages, sidebar=sidebar, project_name=project.name, cards=cards)
 
     def _link_pages(self, pages: list[WikiPage], wiki_data: WikiData) -> None:
         # index exact symbol names and file paths to the module page owning them;
@@ -236,63 +263,83 @@ class WikiBuilder:
 
         return "\n".join(lines)
 
-    def _build_cards_page(self, wiki_data: WikiData, graph, root: str) -> str:
+    def _collect_cards(self, wiki_data: WikiData, graph, root: str) -> list[ModuleCard]:
         # one compact card per module: what it is for, what it exposes, what
         # it touches, which file is the way in, and where the churn is; enough
         # to pick a starting point before opening the page
-        cards = [m for m in wiki_data.modules if m.purpose or m.files]
-        if not cards:
-            return ""
+        modules = [m for m in wiki_data.modules if m.purpose or m.files]
+        if not modules:
+            return []
         churn, churn_commits = file_churn(root)
         entries = graph.get_entry_points()
         # a module caught in an import cycle gets a heads-up on its card; that
         # loop is exactly the trap a newcomer reads cards to avoid
         cycle_mods = {_get_module(f) for cycle in graph.find_circular_dependencies() for f in cycle}
+        cards: list[ModuleCard] = []
+        for mod in modules:
+            symbols = [s.name for f in mod.files for s in f.key_symbols]
+            mod_entries = [e for e in entries if _get_module(e) == mod.name]
+            cards.append(
+                ModuleCard(
+                    name=mod.name,
+                    purpose=mod.purpose,
+                    file_count=len(mod.files),
+                    key_symbols=symbols[:5],
+                    extra_symbols=max(0, len(symbols) - 5),
+                    key_concepts=[c.name for c in mod.key_concepts[:4]],
+                    entry_files=mod_entries[:3],
+                    extra_entries=max(0, len(mod_entries) - 3),
+                    in_cycle=mod.name in cycle_mods,
+                    hotspots=module_hotspots(churn, churn_commits, mod.name) or [],
+                    relationships=[(r.source, r.target) for r in mod.relationships[:4]],
+                    page_id=f"modules/{mod.name}",
+                )
+            )
+        return cards
+
+    def _build_cards_page(self, cards: list[ModuleCard]) -> str:
         lines = [
             "# Knowledge Cards\n",
             "One card per module: its purpose, its public surface, its",
             "internal links, and the file to open first. Pick a card, then",
             "open the full module page.\n",
         ]
-        for mod in cards:
-            lines.append(f"### `{mod.name}`\n")
-            if mod.purpose:
-                lines.append(f"> {mod.purpose}\n")
-            if mod.name in cycle_mods:
+        for card in cards:
+            lines.append(f"### `{card.name}`\n")
+            if card.purpose:
+                lines.append(f"> {card.purpose}\n")
+            if card.in_cycle:
                 lines.append(
                     "Cycle: files here import each other in a loop, so read them "
                     f"as a set; see [Dependencies]({_rel_href('cards', 'dependencies')}).\n"
                 )
             facts: list[str] = []
-            if mod.files:
-                facts.append(f"{len(mod.files)} files")
-            symbols = [s.name for f in mod.files for s in f.key_symbols]
-            if symbols:
-                shown = symbols[:5]
-                more = f" +{len(symbols) - len(shown)} more" if len(symbols) > len(shown) else ""
-                facts.append("symbols " + ", ".join(f"`{n}`" for n in shown) + more)
-            if mod.key_concepts:
-                facts.append("concepts " + ", ".join(c.name for c in mod.key_concepts[:4]))
+            if card.file_count:
+                facts.append(f"{card.file_count} files")
+            if card.key_symbols:
+                more = f" +{card.extra_symbols} more" if card.extra_symbols else ""
+                facts.append("symbols " + ", ".join(f"`{n}`" for n in card.key_symbols) + more)
+            if card.key_concepts:
+                facts.append("concepts " + ", ".join(card.key_concepts))
             if facts:
                 lines.append(" · ".join(facts) + "\n")
-            mod_entries = [e for e in entries if _get_module(e) == mod.name]
-            if mod_entries:
-                shown = mod_entries[:3]
-                more = (
-                    f" +{len(mod_entries) - len(shown)} more"
-                    if len(mod_entries) > len(shown)
-                    else ""
-                )
-                lines.append("Entry: " + ", ".join(f"`{e}`" for e in shown) + more + "\n")
-            hot = module_hotspots(churn, churn_commits, mod.name)
-            if hot:
+            if card.entry_files:
+                more = f" +{card.extra_entries} more" if card.extra_entries else ""
                 lines.append(
-                    "Hot (most commits): " + ", ".join(f"`{p}` ({n})" for p, n in hot) + "\n"
+                    "Entry: " + ", ".join(f"`{e}`" for e in card.entry_files) + more + "\n"
                 )
-            if mod.relationships:
-                rels = ", ".join(f"`{r.source}` → `{r.target}`" for r in mod.relationships[:4])
+            if card.hotspots:
+                lines.append(
+                    "Hot (most commits): "
+                    + ", ".join(f"`{p}` ({n})" for p, n in card.hotspots)
+                    + "\n"
+                )
+            if card.relationships:
+                rels = ", ".join(
+                    f"`{source}` → `{target}`" for source, target in card.relationships
+                )
                 lines.append(f"Internal links: {rels}\n")
-            lines.append(f"[Open the full page]({_rel_href('cards', f'modules/{mod.name}')})\n")
+            lines.append(f"[Open the full page]({_rel_href('cards', card.page_id)})\n")
         return "\n".join(lines)
 
     def _build_module_page(self, mod) -> str:
