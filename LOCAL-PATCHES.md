@@ -7,9 +7,8 @@ checks, or the local-path flow in the web UI.
 - Upstream base: `29d9029b4c770b66772c1d565f2d5b5980074147` (2026-10-23)
 - This repository (`chenmudu/RepoWiki`, branch `main`) is the source of truth;
   every patch below is committed here.
-- Virtualenv: `D:\Tools\repowiki-src-venv` (editable install of this clone)
-- CLI wrapper: `D:\Tools\repowiki.cmd`
-- Previous wheel install (rollback): `D:\Tools\repowiki-venv` (PyPI 0.6.0)
+- Virtualenv: any virtualenv with `pip install -e ".[web]"`; the CLI is `repowiki`
+- Previous wheel install (rollback): a separate virtualenv with the PyPI 0.6.0 wheel
 
 ## Why each patch exists
 
@@ -77,41 +76,40 @@ it. The registry keeps the *input* of every scan instead:
 ## Rebuild
 
 ```bash
-cd /d/project/github/RepoWiki/frontend
+cd frontend
 npm ci
 npm run build          # tsc --noEmit && vite build -> src/repowiki/server/static
 
-cd /d/project/github/RepoWiki
-/d/Tools/repowiki-src-venv/Scripts/python.exe -m pip install -e ".[web]"
+cd ..
+pip install -e ".[web]"
 ```
 
 ## Run
 
 `repowiki serve` binds `0.0.0.0` without authentication, so the web UI is
-started explicitly on the loopback interface instead:
+started explicitly on the loopback interface instead (from the repository
+root, with the virtualenv active):
 
 ```bash
-cd /d/project/github/RepoWiki
 PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
-  /d/Tools/repowiki-src-venv/Scripts/python.exe -m uvicorn \
-  repowiki.server.app:create_app --factory --host 127.0.0.1 --port 8765
+  python -m uvicorn repowiki.server.app:create_app \
+  --factory --host 127.0.0.1 --port 8765
 ```
 
 `PYTHONUTF8=1` is required: the Windows console codepage is GBK and Rich's
 emoji crash the CLI without it.
 
-`D:\Tools\repowiki-serve.cmd` starts the same thing in a double-clicked
-console.
+A small launcher script outside the repository starts the same command in a
+double-clicked console.
 
 ## Verify
 
 ```bash
-cd /d/project/github/RepoWiki
-/d/Tools/repowiki-src-venv/Scripts/python.exe -m pytest -q     # 247 passed
-/d/Tools/repowiki.cmd diff D:/project/github/kiro HEAD~1..HEAD
+python -m pytest -q          # 247 passed
+repowiki diff <repo> HEAD~1..HEAD
 ```
 
 ## Rollback
 
-The old wheel install still works: `D:\Tools\repowiki-venv\Scripts\repowiki.exe`.
-Point `D:\Tools\repowiki.cmd` back at it to switch back.
+A separate virtualenv with the PyPI 0.6.0 wheel still works; point `repowiki`
+at it to switch back.

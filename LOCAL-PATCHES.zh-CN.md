@@ -5,9 +5,8 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 
 - 上游基线：`29d9029b4c770b66772c1d565f2d5b5980074147`（2026-10-23）
 - 本仓库（`chenmudu/RepoWiki`，`main` 分支）就是源头，下面每一项改动都已提交在这里。
-- 虚拟环境：`D:\Tools\repowiki-src-venv`（本克隆的 editable 安装）
-- CLI 包装脚本：`D:\Tools\repowiki.cmd`
-- 旧 wheel 安装（回滚用）：`D:\Tools\repowiki-venv`（PyPI 0.6.0）
+- 虚拟环境：任意一个执行过 `pip install -e ".[web]"` 的 venv；CLI 命令是 `repowiki`
+- 旧 wheel 安装（回滚用）：另一个装有 PyPI 0.6.0 wheel 的 venv
 
 ## 每个补丁解决什么问题
 
@@ -58,36 +57,39 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 ## 重新构建
 
 ```bash
-cd /d/project/github/RepoWiki/frontend
+cd frontend
 npm ci
 npm run build          # tsc --noEmit && vite build -> src/repowiki/server/static
 
-cd /d/project/github/RepoWiki
-/d/Tools/repowiki-src-venv/Scripts/python.exe -m pip install -e ".[web]"
+cd ..
+pip install -e ".[web]"
 ```
 
 ## 运行
 
-`repowiki serve` 会绑定 `0.0.0.0` 且没有鉴权，所以 WebUI 显式只监听回环地址：
+`repowiki serve` 会绑定 `0.0.0.0` 且没有鉴权，所以 WebUI 显式只监听回环地址
+（在仓库根目录、虚拟环境已激活的情况下）：
 
 ```bash
-cd /d/project/github/RepoWiki
 PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
-  /d/Tools/repowiki-src-venv/Scripts/python.exe -m uvicorn \
-  repowiki.server.app:create_app --factory --host 127.0.0.1 --port 8765
+  python -m uvicorn repowiki.server.app:create_app \
+  --factory --host 127.0.0.1 --port 8765
 ```
 
 必须带 `PYTHONUTF8=1`：Windows 控制台代码页是 GBK，Rich 的 emoji 会让 CLI 崩掉。
 
-`D:\Tools\repowiki-serve.cmd` 启动的是同一条命令，双击即可。
+仓库外的一个小启动脚本跑的是同一条命令，双击即可。
 
 ## 验证
 
 ```bash
-cd /d/project/github/RepoWiki
-/d/Tools/repowiki-src-venv/Scripts/python.exe -m pytest -q     # 247 passed
-/d/Tools/repowiki.cmd diff D:/project/github/kiro HEAD~1..HEAD
+python -m pytest -q          # 247 passed
+repowiki diff <repo> HEAD~1..HEAD
 ```
+
+## 回滚
+
+另建一个装 PyPI 0.6.0 wheel 的 venv 仍然可用，把 `repowiki` 指回它即可。
 
 ## 回滚
 
