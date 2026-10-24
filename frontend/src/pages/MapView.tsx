@@ -11,7 +11,7 @@ export default function MapView() {
   useEffect(() => {
     if (!id) return;
     getRepoMap(id).then((m) => {
-      if (!m || m.error) setError(m?.error ?? "failed to load repo map");
+      if (!m || m.error) setError(m?.error ?? "仓库地图加载失败");
       else setMap(m);
     });
   }, [id]);
@@ -22,18 +22,18 @@ export default function MapView() {
     <div className="min-h-screen bg-white flex flex-col">
       <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-4">
         <Link to={`/project/${id}`} className="text-sm text-slate-500 hover:text-slate-700">
-          ← wiki
+          ← Wiki
         </Link>
         <Link to={`/project/${id}/chat`} className="text-sm text-slate-500 hover:text-slate-700">
-          chat
+          问答
         </Link>
         <Link to={`/project/${id}/diff`} className="text-sm text-slate-500 hover:text-slate-700">
-          diff review
+          Diff 评审
         </Link>
-        <span className="text-sm font-medium text-slate-800">Repo Map</span>
+        <span className="text-sm font-medium text-slate-800">仓库地图</span>
         {map && (
           <span className="text-xs text-slate-400">
-            {map.root} · {map.file_count} files · ranked by dependency PageRank
+            {map.root} · {map.file_count} 个文件 · 按依赖 PageRank 排序
           </span>
         )}
       </div>
@@ -42,16 +42,16 @@ export default function MapView() {
         {error ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : !map ? (
-          <p className="text-sm text-slate-400 animate-pulse">Building repo map...</p>
+          <p className="text-sm text-slate-400 animate-pulse">正在构建仓库地图…</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-slate-400 border-b border-slate-200">
                 <th className="py-2 pr-4 w-10">#</th>
-                <th className="py-2 pr-4 w-48">Score</th>
-                <th className="py-2 pr-4">Path</th>
-                <th className="py-2 pr-4 w-24">Lang</th>
-                <th className="py-2 w-20 text-right">Lines</th>
+                <th className="py-2 pr-4 w-48">得分</th>
+                <th className="py-2 pr-4">路径</th>
+                <th className="py-2 pr-4 w-24">语言</th>
+                <th className="py-2 w-20 text-right">行数</th>
               </tr>
             </thead>
             <tbody>

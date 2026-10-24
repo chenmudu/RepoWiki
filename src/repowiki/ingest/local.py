@@ -46,7 +46,7 @@ def ingest_local(
     """scan a local directory and package it into a ProjectContext."""
     root = Path(path).resolve()
     if not root.is_dir():
-        raise FileNotFoundError(f"Not a directory: {root}")
+        raise FileNotFoundError(f"目录不存在或不是文件夹：{root}")
 
     report = ScanReport()
     files = scan_directory(root, max_file_size=max_file_size, max_files=max_files, report=report)

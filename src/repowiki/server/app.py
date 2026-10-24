@@ -9,6 +9,7 @@ from pathlib import Path
 
 from repowiki import __version__
 from repowiki.core.cache import Cache
+from repowiki.core.projects import ProjectRegistry
 
 # shown at / when the built frontend is not installed alongside the package
 _NO_FRONTEND_PAGE = """<!DOCTYPE html>
@@ -43,6 +44,7 @@ served on the next start.</p>
 # in-memory project store (keyed by project ID)
 _projects: dict = {}
 _cache: Cache | None = None
+_registry: ProjectRegistry | None = None
 
 
 def get_cache() -> Cache:
@@ -52,6 +54,57 @@ def get_cache() -> Cache:
 
 def get_projects() -> dict:
     return _projects
+
+
+def get_registry() -> ProjectRegistry:
+    """the on-disk registry of indexed projects; survives a restart."""
+    global _registry
+    if _registry is None:
+        _registry = ProjectRegistry()
+    return _registry
+
+
+def ensure_loaded(project_id: str) -> dict | None:
+    """the in-memory project slot, restored from disk after a restart.
+
+    A scan keeps its project in memory only, so a restarted server used to
+    lose every indexed project. The stored artifacts are the fallback: the
+    wiki and the scanned project are read back on first access.
+    """
+    slot = _projects.get(project_id)
+    if slot is not None:
+        return slot
+
+    from repowiki.core.store import load_project, load_wiki
+    from repowiki.server.models import ProjectInfo
+
+    project = load_project(project_id)
+    wiki = load_wiki(project_id)
+    if project is None and wiki is None:
+        return None
+
+    record = get_registry().get(project_id)
+    name = ""
+    if record and record.name:
+        name = record.name
+    elif project is not None:
+        name = project.name
+
+    info = ProjectInfo(
+        id=project_id,
+        name=name,
+        status="done",
+        total_files=len(project.files) if project else 0,
+        total_lines=project.total_lines if project else 0,
+    )
+    slot = {
+        "info": info,
+        "wiki": wiki,
+        "project": project,
+        "progress": ["已从本地缓存恢复"],
+    }
+    _projects[project_id] = slot
+    return slot
 
 
 def create_app(static_dir: str | Path | None = None):
@@ -113,11 +166,12 @@ def create_app(static_dir: str | Path | None = None):
     )
 
     # register routers
-    from repowiki.server.routers import chat, insights, scan, wiki
+    from repowiki.server.routers import chat, fs, insights, scan, wiki
     app.include_router(scan.router, prefix="/api")
     app.include_router(wiki.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(insights.router, prefix="/api")
+    app.include_router(fs.router, prefix="/api")
 
     @app.get("/api/health")
     async def health():

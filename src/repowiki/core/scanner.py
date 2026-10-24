@@ -264,7 +264,7 @@ def scan_directory(
     """
     root = Path(root).resolve()
     if not root.is_dir():
-        raise FileNotFoundError(f"Not a directory: {root}")
+        raise FileNotFoundError(f"目录不存在或不是文件夹：{root}")
 
     results: list[FileInfo] = []
     ignore_rules = IgnoreRules.from_root(root)
@@ -313,7 +313,8 @@ def scan_directory(
                 report.candidates += 1
 
             try:
-                size = full.stat().st_size
+                stat = full.stat()
+                size = stat.st_size
             except OSError:
                 continue
             if size > max_file_size or size == 0:
@@ -364,6 +365,7 @@ def scan_directory(
                 content=text,
                 is_config=is_cfg,
                 is_entrypoint=is_entry,
+                mtime_ns=stat.st_mtime_ns,
             ))
 
         if len(results) >= hard_cap:
@@ -404,3 +406,44 @@ def scan_directory(
 
     results.sort(key=_sort_key)
     return results
+
+
+def iter_candidate_paths(root: str | Path, max_file_size: int = 200 * 1024):
+    """yield (relative posix path, stat) for files the scan would consider.
+
+    Same directory and name filters as scan_directory, but nothing is read:
+    this is what the change detector walks, so it stays cheap on every list
+    refresh.
+    """
+    root = Path(root).resolve()
+    if not root.is_dir():
+        return
+    ignore_rules = IgnoreRules.from_root(root)
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        kept_dirs = []
+        for dirname in dirnames:
+            rel_dir = (Path(dirpath) / dirname).relative_to(root).as_posix()
+            if dirname in _SKIP_DIRS or dirname.endswith(".egg-info"):
+                continue
+            if ignore_rules.matches(rel_dir, is_dir=True):
+                continue
+            kept_dirs.append(dirname)
+        dirnames[:] = kept_dirs
+
+        for fname in filenames:
+            full = Path(dirpath) / fname
+            rel_posix = full.relative_to(root).as_posix()
+            if full.is_symlink():
+                continue
+            if ignore_rules.matches(rel_posix):
+                continue
+            if _is_sensitive_name(full) or _has_skipped_suffix(full):
+                continue
+            try:
+                stat = full.stat()
+            except OSError:
+                continue
+            if stat.st_size == 0 or stat.st_size > max_file_size:
+                continue
+            yield rel_posix, stat

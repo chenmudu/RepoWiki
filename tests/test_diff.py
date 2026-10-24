@@ -2,7 +2,10 @@
 
 import json
 import subprocess
+from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from repowiki.cli import cli
@@ -119,3 +122,39 @@ def test_cli_diff_json(tmp_path):
     assert entry["change"] == "M"
     assert entry["rank"] == 1
     assert entry["transitive_dependents"] == 2
+
+
+# --- git invocation and error reporting ---
+
+def test_git_runs_with_a_scoped_safe_directory(tmp_path):
+    """a repo owned by another Windows SID makes git refuse to read it;
+    the fix is a per-command safe.directory, never a global config write."""
+    _make_git_repo(tmp_path)
+
+    with patch("repowiki.core.diff.subprocess.run", wraps=subprocess.run) as run:
+        diff_files(str(tmp_path), "HEAD")
+
+    first = run.call_args_list[0].args[0]
+    assert first[:2] == ["git", "-c"]
+    assert first[2] == f"safe.directory={Path(str(tmp_path)).resolve().as_posix()}"
+    # the override is scoped to this repo, not the user's global config
+    assert all(
+        any(str(arg).startswith("safe.directory=") for arg in call.args[0])
+        for call in run.call_args_list
+    )
+
+
+def test_unknown_refspec_reports_a_readable_error(tmp_path):
+    _make_git_repo(tmp_path)
+
+    with pytest.raises(RuntimeError, match="refspec"):
+        diff_files(str(tmp_path), "HEAD~99")
+
+
+def test_repo_without_commits_says_there_is_no_baseline(tmp_path):
+    subprocess.run(
+        ["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True
+    )
+
+    with pytest.raises(RuntimeError, match="还没有任何提交"):
+        diff_files(str(tmp_path), "HEAD")

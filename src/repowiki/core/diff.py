@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import networkx as nx
 
@@ -36,17 +37,47 @@ class DiffReport:
         return [f for f in self.files if f.change == "D"]
 
 
+def _git(root: str, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    safe_root = Path(root).resolve().as_posix()
+    proc = subprocess.run(
+        ["git", "-c", f"safe.directory={safe_root}", "-C", root, *args],
+        capture_output=True,
+    )
+    if check and proc.returncode != 0:
+        raise RuntimeError(_git_error(proc.stderr.decode("utf-8", errors="replace")))
+    return proc
+
+
+def _git_error(stderr: str) -> str:
+    text = stderr.strip()
+    lowered = text.lower()
+    if "dubious ownership" in lowered:
+        return (
+            "Git 拒绝访问该仓库：仓库所有者与当前 Windows 用户不一致。"
+            "请修正仓库 ACL，或为该仓库添加 safe.directory 例外。"
+        )
+    if "unknown revision" in lowered or "ambiguous argument" in lowered:
+        return "无法解析该 refspec：对应提交或分支不存在。"
+    if "not a git repository" in lowered:
+        return "该目录不是 Git 仓库，无法生成 diff。"
+    return f"git 执行失败：{text[:300]}"
+
+
 def diff_files(root: str, refspec: str) -> list[tuple[str, str, str]]:
     """changed (status, path, old_path) triples for a refspec.
 
     Accepts A...B, A..B, or a single ref (diffed against the worktree);
     `git diff --name-status` treats them the same at this layer.
     """
-    out = subprocess.run(
-        ["git", "-C", root, "diff", "--name-status", "-z", refspec],
-        capture_output=True,
-        check=True,
-    ).stdout.decode("utf-8", errors="replace")
+    head = _git(root, "rev-parse", "--verify", "HEAD", check=False)
+    if head.returncode != 0:
+        stderr = head.stderr.decode("utf-8", errors="replace")
+        if "needed a single revision" in stderr.lower():
+            raise RuntimeError("该仓库还没有任何提交，无法以 HEAD 为基准生成 diff。")
+        raise RuntimeError(_git_error(stderr))
+    out = _git(root, "diff", "--name-status", "-z", refspec).stdout.decode(
+        "utf-8", errors="replace"
+    )
     # -z format: STATUS\0PATH\0, renames: R100\0OLD\0NEW\0
     parts = [p for p in out.split("\0") if p != ""]
     result: list[tuple[str, str, str]] = []

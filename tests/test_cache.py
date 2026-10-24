@@ -60,7 +60,7 @@ class _StubLLM:
     def __init__(self):
         self.calls = 0
 
-    async def complete(self, messages, max_tokens=4096):
+    async def complete(self, messages, max_tokens=4096, response_format=None):
         self.calls += 1
         return '{"name": "mod", "purpose": "test module", "files": []}'
 

@@ -34,6 +34,8 @@ class ChatRequest(BaseModel):
     # prior turns, oldest first; the server threads them into the prompt so
     # follow-up questions have context
     history: list[ChatTurn] = Field(default_factory=list)
+    # optional model alias; falls back to the server config
+    model: str | None = None
 
 
 class FileReference(BaseModel):
@@ -46,3 +48,11 @@ class FileReference(BaseModel):
 class DiffRequest(BaseModel):
     # anything `git diff` accepts: HEAD, HEAD~3, main...feature, a sha, ...
     refspec: str = "HEAD"
+
+
+class ReindexRequest(BaseModel):
+    # optional overrides when re-opening a project from the history
+    language: str | None = None
+    model: str | None = None
+    # true = re-index from scratch; false = only make the project usable
+    force: bool = False

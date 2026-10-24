@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from collections import Counter
+from pathlib import Path
 
 from repowiki.core.graph import _get_module
 
@@ -26,7 +27,8 @@ def file_churn(root: str) -> tuple[Counter[str], int]:
     try:
         out = subprocess.run(
             [
-                "git", "-c", "core.quotepath=false", "-C", root,
+                "git", "-c", f"safe.directory={Path(root).resolve().as_posix()}",
+                "-c", "core.quotepath=false", "-C", root,
                 "log", "-n", str(_LOG_COMMITS), "--name-only", "--pretty=format:",
             ],
             capture_output=True, text=True, encoding="utf-8", errors="replace",

@@ -6,7 +6,8 @@ import { useWikiStore } from "../stores/wiki";
 export default function ChatView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { chatMessages, addChatMessage, appendToLastChat, setLastChatReferences } = useWikiStore();
+  const { chatMessages, addChatMessage, appendToLastChat, setLastChatReferences, settings } =
+    useWikiStore();
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -35,6 +36,7 @@ export default function ChatView() {
         if (data.content) appendToLastChat(data.content);
       },
       () => setStreaming(false),
+      settings.model || undefined,
     );
   }
 
@@ -46,17 +48,17 @@ export default function ChatView() {
           onClick={() => navigate(`/project/${id}`)}
           className="text-slate-500 hover:text-slate-700"
         >
-          &larr; Back to Wiki
+          &larr; 返回 Wiki
         </button>
-        <h1 className="text-lg font-semibold text-slate-800">Ask about this codebase</h1>
+        <h1 className="text-lg font-semibold text-slate-800">关于这个代码库的问答</h1>
       </header>
 
       {/* messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {chatMessages.length === 0 && (
           <div className="text-center text-slate-400 mt-20">
-            <p className="text-lg mb-2">Ask anything about the codebase</p>
-            <p className="text-sm">e.g. "How does the authentication flow work?"</p>
+            <p className="text-lg mb-2">可以问关于这个代码库的任何问题</p>
+            <p className="text-sm">例如：“认证流程是怎么工作的？”</p>
           </div>
         )}
         {chatMessages.map((msg, i) => (
@@ -74,7 +76,7 @@ export default function ChatView() {
               <pre className="whitespace-pre-wrap font-sans text-sm">{msg.content}</pre>
               {msg.references && msg.references.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Sources</p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">来源</p>
                   {msg.references.map((ref, j) => (
                     <details key={j} className="group rounded border border-slate-200 bg-slate-50">
                       <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-mono text-blue-700 hover:bg-slate-100 rounded">
@@ -86,7 +88,7 @@ export default function ChatView() {
                           to={`/project/${id}/file/${ref.path}#L${ref.line_start}-L${ref.line_end}`}
                           className="text-xs text-blue-600 hover:underline"
                         >
-                          open in file view →
+                          在文件视图中打开 →
                         </Link>
                       </div>
                     </details>
@@ -107,7 +109,7 @@ export default function ChatView() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Ask a question..."
+            placeholder="输入问题…"
             className="flex-1 px-4 py-2.5 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
             disabled={streaming}
           />
@@ -116,7 +118,7 @@ export default function ChatView() {
             disabled={streaming || !input.trim()}
             className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            Send
+            发送
           </button>
         </div>
       </div>

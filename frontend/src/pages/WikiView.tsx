@@ -32,8 +32,8 @@ export default function WikiView() {
     setLoading(true);
     getPage(id, currentPageId).then((p) => {
       if ("error" in p) {
-        setPageContent("Page not found");
-        setPageTitle("Error");
+        setPageContent("页面不存在");
+        setPageTitle("错误");
       } else {
         setPageContent(p.content);
         setPageTitle(p.title);
@@ -45,7 +45,7 @@ export default function WikiView() {
   if (!wiki) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-500">
-        Loading wiki...
+        正在加载 Wiki…
       </div>
     );
   }
@@ -68,7 +68,7 @@ export default function WikiView() {
       {/* main content */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-12 text-slate-400 animate-pulse">Loading page...</div>
+          <div className="p-12 text-slate-400 animate-pulse">正在加载页面…</div>
         ) : (
           <WikiContent content={pageContent} title={pageTitle} />
         )}

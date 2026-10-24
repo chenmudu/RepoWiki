@@ -128,7 +128,7 @@ def test_diff_unknown_project_and_bad_refspec(monkeypatch, tmp_path):
         assert client.post("/api/project/nope/diff", json={}).status_code == 404
         bad = client.post("/api/project/p1/diff", json={"refspec": "HEAD~99"})
         assert bad.status_code == 400
-        assert "cannot diff" in bad.json()["error"]
+        assert "无法" in bad.json()["error"]
         empty = client.post("/api/project/p1/diff", json={"refspec": "  "})
         assert empty.status_code == 400
 
@@ -147,4 +147,4 @@ def test_diff_on_shallow_clone_adds_hint(monkeypatch, tmp_path):
         resp = client.post("/api/project/p1/diff", json={"refspec": "HEAD~1"})
 
     assert resp.status_code == 400
-    assert "shallow" in resp.json()["error"]
+    assert "浅克隆" in resp.json()["error"]

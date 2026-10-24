@@ -145,7 +145,7 @@ def diff_map(path: str, refspec: str, fmt: str):
     try:
         diff_report = build_diff_report(path, refspec, graph)
     except Exception as exc:
-        raise click.UsageError(f"cannot diff '{refspec}' in {path}: {exc}") from exc
+        raise click.UsageError(f"无法在 {path} 上生成 diff（{refspec}）：{exc}") from exc
 
     if report.partial:
         err_console.print(f"[yellow]Partial coverage:[/] {report.summary_line()}")
@@ -348,7 +348,7 @@ async def _run_analysis(
 
     graph = DependencyGraph.build_from_project(project)
     builder = WikiBuilder()
-    wiki = builder.build(project, wiki_data, graph)
+    wiki = builder.build(project, wiki_data, graph, language=cfg.language)
 
     output_dir = cfg.output_dir
     if fmt == "markdown":

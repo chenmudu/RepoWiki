@@ -56,6 +56,10 @@ class Analyzer:
         # surfaced at the end of the run so a half-degraded wiki isn't silent
         self.degraded_modules: list[str] = []
 
+    def _t(self, en: str, zh: str) -> str:
+        """progress text in the wiki's language."""
+        return zh if self.language == "zh" else en
+
     async def analyze(
         self,
         project: ProjectContext,
@@ -70,23 +74,24 @@ class Analyzer:
                 on_progress(msg)
 
         # 1. prepare context
-        progress("Preparing file context...")
+        progress(self._t("Preparing file context...", "正在准备文件上下文..."))
         key_files_text = self._build_key_files_context(project)
         tree_hash = content_hash(project.file_tree + key_files_text)
 
         # 2. generate overview
-        progress("Generating project overview...")
+        progress(self._t("Generating project overview...", "正在生成项目概览..."))
         overview = await self._generate_overview(project, key_files_text, tree_hash)
 
         # 3. group files into modules and analyze each
         modules_map = self._group_into_modules(project.files)
-        progress(f"Analyzing {len(modules_map)} modules...")
+        progress(self._t(f"Analyzing {len(modules_map)} modules...",
+                         f"正在分析 {len(modules_map)} 个模块..."))
         module_docs = await self._analyze_modules(
             modules_map, overview.one_liner, project, progress
         )
 
         # 4. generate architecture diagram
-        progress("Detecting architecture...")
+        progress(self._t("Detecting architecture...", "正在识别架构..."))
         architecture = await self._generate_architecture(project, key_files_text, tree_hash)
 
         # 4b. deterministic call graph from the AST — cheap, never cached, so
@@ -103,17 +108,21 @@ class Analyzer:
         architecture.data_flow_graph = dataflow_to_mermaid(build_dataflow_edges(project))
 
         # 5. generate reading guide (needs module summaries + rankings placeholder)
-        progress("Creating reading guide...")
+        progress(self._t("Creating reading guide...", "正在生成阅读指南..."))
         reading_guide = await self._generate_reading_guide(project, module_docs, tree_hash)
 
         if self.degraded_modules:
             logger.warning("Modules with placeholder docs: %s", ", ".join(self.degraded_modules))
             progress(
-                f"{len(self.degraded_modules)} module(s) fell back to placeholder docs "
-                f"after LLM failures: {', '.join(self.degraded_modules)}"
+                self._t(
+                    f"{len(self.degraded_modules)} module(s) fell back to placeholder docs "
+                    f"after LLM failures: {', '.join(self.degraded_modules)}",
+                    f"{len(self.degraded_modules)} 个模块在 LLM 调用失败后退化为占位文档："
+                    f"{', '.join(self.degraded_modules)}",
+                )
             )
 
-        progress("Done!")
+        progress(self._t("Done!", "完成！"))
         return WikiData(
             overview=overview,
             modules=module_docs,
@@ -130,6 +139,20 @@ class Analyzer:
                 parts.append(f"### {f.path}\n```{f.language}\n{content}\n```")
         return "\n\n".join(parts)
 
+    async def _complete_json(self, messages: list[dict], attempts: int = 2):
+        """Ask for JSON, retrying once if the model returns unparseable text."""
+        for attempt in range(attempts):
+            raw = await self.llm.complete(
+                messages,
+                max_tokens=self.max_tokens,
+                response_format={"type": "json_object"},
+            )
+            data = extract_json(raw)
+            if data is not None:
+                return data
+            logger.warning("JSON parse failed (attempt %d/%d)", attempt + 1, attempts)
+        return None
+
     async def _generate_overview(
         self, project: ProjectContext, key_files: str, tree_hash: str
     ) -> ProjectOverview:
@@ -143,8 +166,7 @@ class Analyzer:
                 pass
 
         messages = build_overview_prompt(project.file_tree, key_files, self.language)
-        raw = await self.llm.complete(messages, max_tokens=self.max_tokens)
-        data = extract_json(raw)
+        data = await self._complete_json(messages)
         if not data or not isinstance(data, dict):
             logger.warning("Failed to parse overview JSON, using defaults")
             return ProjectOverview(name=project.name)
@@ -198,10 +220,14 @@ class Analyzer:
                     reused += 1
                 else:
                     regenerated += 1
-            progress(f"Analyzed module {i + 1}/{len(tasks)}")
+            progress(self._t(f"Analyzed module {i + 1}/{len(tasks)}",
+                             f"已分析模块 {i + 1}/{len(tasks)}"))
 
         if reused:
-            progress(f"Module analysis: {reused} reused from cache, {regenerated} regenerated")
+            progress(self._t(
+                f"Module analysis: {reused} reused from cache, {regenerated} regenerated",
+                f"模块分析：{reused} 个复用缓存，{regenerated} 个重新生成",
+            ))
 
         # sort by number of files (largest first); name tiebreak keeps the
         # order deterministic, otherwise the reading guide's cache key
@@ -239,8 +265,7 @@ class Analyzer:
                     pass
 
             messages = build_module_prompt(name, files_context, project_summary, self.language)
-            raw = await self.llm.complete(messages, max_tokens=self.max_tokens)
-            data = extract_json(raw)
+            data = await self._complete_json(messages)
             if not data or not isinstance(data, dict):
                 logger.warning("Failed to parse module '%s' JSON", name)
                 self.degraded_modules.append(name)
@@ -270,8 +295,7 @@ class Analyzer:
                 pass
 
         messages = build_architecture_prompt(project.file_tree, key_files, self.language)
-        raw = await self.llm.complete(messages, max_tokens=self.max_tokens)
-        data = extract_json(raw)
+        data = await self._complete_json(messages)
         if not data or not isinstance(data, dict):
             logger.warning("Failed to parse architecture JSON")
             return ArchitectureDiagram()
@@ -333,8 +357,7 @@ class Analyzer:
                 pass
 
         messages = build_reading_guide_prompt(rankings, module_summaries, self.language)
-        raw = await self.llm.complete(messages, max_tokens=self.max_tokens)
-        data = extract_json(raw)
+        data = await self._complete_json(messages)
         if not data or not isinstance(data, dict):
             logger.warning("Failed to parse reading guide JSON")
             return ReadingGuide()

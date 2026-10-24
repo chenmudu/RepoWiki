@@ -71,6 +71,7 @@ class WikiBuilder:
         project: ProjectContext,
         wiki_data: WikiData,
         graph: DependencyGraph,
+        language: str = "en",
     ) -> Wiki:
         pages: list[WikiPage] = []
         sidebar: list[SidebarItem] = []
@@ -151,7 +152,113 @@ class WikiBuilder:
             sidebar.append(SidebarItem(title="Symbol Index", page_id="symbols"))
 
         self._link_pages(pages, wiki_data)
+        if language == "zh":
+            self._localize_zh(pages, sidebar)
         return Wiki(pages=pages, sidebar=sidebar, project_name=project.name, cards=cards)
+
+    def _localize_zh(self, pages: list[WikiPage], sidebar: list[SidebarItem]) -> None:
+        titles = {
+            "Overview": "概览",
+            "Architecture": "架构",
+            "Knowledge Cards": "知识卡片",
+            "Test Map": "测试地图",
+            "Modules": "模块",
+            "Reading Guide": "阅读指南",
+            "Dependencies": "依赖关系",
+            "Symbol Index": "符号索引",
+        }
+        replacements = (
+            ("# Architecture", "# 架构"),
+            ("# Knowledge Cards", "# 知识卡片"),
+            ("# Test Map", "# 测试地图"),
+            ("# Reading Guide", "# 阅读指南"),
+            ("# Module Dependencies", "# 模块依赖"),
+            ("# Symbol Index", "# 符号索引"),
+            ("## Tech Stack", "## 技术栈"),
+            ("## Key Features", "## 核心功能"),
+            ("## Getting Started", "## 快速开始"),
+            ("## Component Diagram", "## 组件图"),
+            ("## Components", "## 组件"),
+            ("## Sequence Diagram", "## 时序图"),
+            ("## Call Graph", "## 调用图"),
+            ("## Data Flow Graph", "## 数据流图"),
+            ("## Data Flow", "## 数据流"),
+            ("## Files", "## 文件"),
+            ("## Key Concepts", "## 关键概念"),
+            ("## Internal Relationships", "## 内部关系"),
+            ("## Tips", "## 提示"),
+            ("## Core Files (by PageRank)", "## 核心文件（按 PageRank）"),
+            ("## Likely Entry Points", "## 可能入口"),
+            ("## Circular Dependencies", "## 循环依赖"),
+            ("## Isolated Files", "## 孤立文件"),
+            ("## Source files, by tests that reach them", "## 源码文件及触达它们的测试"),
+            ("## Sources no test file imports", "## 没有测试 import 的源码"),
+            ("## Test files that reach no source file", "## 没有触达任何源码的测试文件"),
+            ("| Source | Tests | Symbols imported |", "| 源码 | 测试 | 导入的符号 |"),
+            ("**Files:**", "**文件：**"),
+            ("Files: ", "文件："),
+            ("Entry: ", "入口："),
+            ("Internal links: ", "内部链接："),
+            ("Hot (most commits): ", "热点（提交最多）："),
+            ("Open the full page", "打开完整页面"),
+            ("**Partial coverage:**", "**部分覆盖：**"),
+            ("this wiki was built from ", "本 wiki 基于 "),
+            ("Oversized files left out:", "跳过的超大文件："),
+            ("Excluded directories:", "排除的目录："),
+            ("Pages below describe only the scanned subset.", "以下页面只描述已扫描的子集。"),
+            (
+                "One card per module: its purpose, its public surface, its\n"
+                "internal links, and the file to open first. Pick a card, then\n"
+                "open the full module page.",
+                "每个模块一张卡片：用途、对外接口、内部链接、最先打开的文件。先选卡片，再打开完整模块页。",
+            ),
+            ("symbols ", "符号 "),
+            ("concepts ", "概念 "),
+            (" more", " 个"),
+            (
+                "Reach means a test imports the file; dynamic loading is not chased, "
+                "so this is where to look, not a coverage claim.",
+                "Reach 表示测试 import 了该文件；不追踪动态加载，因此这只是查找入口，不是覆盖率结论。",
+            ),
+            ("## Section", "## 小节"),
+            ("## Function", "## 函数"),
+            ("## Class", "## 类"),
+            ("## Method", "## 方法"),
+            ("## Constant", "## 常量"),
+            ("## Variable", "## 变量"),
+            ("## Other", "## 其他"),
+            (" 符号 across ", " 个符号，覆盖 "),
+            (" modules.", " 个模块。"),
+            ("; skipped: ", "；跳过："),
+            (" oversized", " 个超大文件"),
+            (" binary", " 个二进制文件"),
+            (" minified/generated", " 个压缩/生成文件"),
+            (" lower-priority over the file cap", " 个低优先级文件超出上限"),
+        )
+        for page in pages:
+            page.title = titles.get(page.title, page.title)
+            for en, zh in replacements:
+                page.content = page.content.replace(en, zh)
+            page.content = re.sub(r"(?m)^## Step (\d+): ", r"## 第 \1 步：", page.content)
+            page.content = re.sub(r"(\d+) files", r"\1 个文件", page.content)
+            page.content = re.sub(r"(\d+) of (\d+) 个文件", r"\1/\2 个文件", page.content)
+            page.content = re.sub(
+                r"(\d+) test files reach (\d+) of (\d+) source files",
+                r"\1 个测试文件触达 \2/\3 个源码文件",
+                page.content,
+            )
+            page.content = re.sub(
+                r"(\d+) symbols across (\d+) modules",
+                r"\1 个符号，覆盖 \2 个模块",
+                page.content,
+            )
+
+        def rename(items: list[SidebarItem]) -> None:
+            for item in items:
+                item.title = titles.get(item.title, item.title)
+                rename(item.children)
+
+        rename(sidebar)
 
     def _link_pages(self, pages: list[WikiPage], wiki_data: WikiData) -> None:
         # index exact symbol names and file paths to the module page owning them;

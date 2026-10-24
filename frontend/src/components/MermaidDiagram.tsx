@@ -23,7 +23,7 @@ export default function MermaidDiagram({ code }: Props) {
         setError("");
       })
       .catch((e) => {
-        setError(`Diagram render failed: ${e.message}`);
+        setError(`图表渲染失败：${e.message}`);
         setSvg("");
       });
   }, [code]);

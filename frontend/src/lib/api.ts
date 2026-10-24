@@ -57,6 +57,68 @@ export async function scanProject(req: ScanRequest): Promise<ProjectInfo> {
   return res.json();
 }
 
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  path: string;
+  url: string;
+  file_count: number;
+  total_lines: number;
+  language: string;
+  status: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  // source tree moved since the last index (local-path projects only)
+  stale?: boolean;
+  changed_files?: number;
+}
+
+export async function getProjects(): Promise<ProjectRecord[]> {
+  const res = await fetch(`${BASE}/projects`, { headers: getHeaders() });
+  const data = await res.json();
+  return data.projects ?? [];
+}
+
+export async function reindexProject(
+  projectId: string,
+  language?: string,
+  force = false,
+): Promise<ProjectInfo> {
+  const res = await fetch(`${BASE}/projects/${projectId}/reindex`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ language, force }),
+  });
+  return res.json();
+}
+
+export interface BrowseEntry {
+  name: string;
+  path: string;
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string;
+  dirs: BrowseEntry[];
+  drives: string[];
+  error?: string;
+}
+
+export async function browseDirectories(path = ""): Promise<BrowseResult> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  const res = await fetch(`${BASE}/fs/browse${query}`, { headers: getHeaders() });
+  return res.json();
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await fetch(`${BASE}/projects/${projectId}`, {
+    method: "DELETE",
+    headers: getHeaders(),
+  });
+}
+
 export function streamScanProgress(
   projectId: string,
   onProgress: (step: string) => void,
@@ -108,11 +170,12 @@ export function streamChat(
   history: ChatTurn[],
   onChunk: (data: any) => void,
   onDone: () => void,
+  model?: string,
 ) {
   fetch(`${BASE}/project/${projectId}/chat`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify({ question, history, model: model || undefined }),
   }).then(async (res) => {
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();

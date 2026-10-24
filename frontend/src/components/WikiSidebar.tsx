@@ -66,7 +66,7 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
                 onClick={onMap}
                 className="flex-1 px-2 py-1.5 border border-slate-300 text-slate-600 rounded-md text-xs font-medium hover:bg-slate-100 transition-colors"
               >
-                Repo Map
+                仓库地图
               </button>
             )}
             {onDiff && (
@@ -74,7 +74,7 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
                 onClick={onDiff}
                 className="flex-1 px-2 py-1.5 border border-slate-300 text-slate-600 rounded-md text-xs font-medium hover:bg-slate-100 transition-colors"
               >
-                Diff Review
+                Diff 评审
               </button>
             )}
             {onCards && (
@@ -82,7 +82,7 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
                 onClick={onCards}
                 className="flex-1 px-2 py-1.5 border border-slate-300 text-slate-600 rounded-md text-xs font-medium hover:bg-slate-100 transition-colors"
               >
-                Cards
+                卡片
               </button>
             )}
           </div>
@@ -91,7 +91,7 @@ export default function WikiSidebar({ sidebar, currentPageId, projectName, onNav
           onClick={onChat}
           className="w-full px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
         >
-          Ask a Question
+          提问
         </button>
       </div>
     </aside>

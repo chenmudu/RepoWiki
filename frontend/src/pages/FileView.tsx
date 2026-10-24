@@ -73,9 +73,9 @@ export default function FileView() {
   if (notFound) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-slate-500">
-        <p>File not found in this project: <code className="font-mono text-xs">{filePath}</code></p>
+        <p>项目中找不到该文件：<code className="font-mono text-xs">{filePath}</code></p>
         <Link to={`/project/${id}`} className="text-blue-600 hover:underline text-sm">
-          back to wiki
+          返回 Wiki
         </Link>
       </div>
     );
@@ -84,7 +84,7 @@ export default function FileView() {
   if (!file || !lines) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-500">
-        Loading file...
+        正在加载文件…
       </div>
     );
   }
@@ -93,14 +93,14 @@ export default function FileView() {
     <div className="min-h-screen bg-white flex flex-col">
       <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-4">
         <Link to={`/project/${id}`} className="text-sm text-slate-500 hover:text-slate-700">
-          ← wiki
+          ← Wiki
         </Link>
         <Link to={`/project/${id}/chat`} className="text-sm text-slate-500 hover:text-slate-700">
-          chat
+          问答
         </Link>
         <span className="font-mono text-sm text-slate-800">{file.path}</span>
         <span className="text-xs text-slate-400">
-          {file.lines} lines{range ? ` · showing L${range[0]}-L${range[1]}` : ""}
+          {file.lines} 行{range ? ` · 显示 L${range[0]}-L${range[1]}` : ""}
         </span>
       </div>
       <div className="flex-1 overflow-auto">

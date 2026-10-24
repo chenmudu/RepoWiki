@@ -16,6 +16,9 @@ class FileInfo(BaseModel):
     content: str = ""
     is_config: bool = False
     is_entrypoint: bool = False
+    # modification time at scan time (ns, exact); the change detector
+    # compares it later, so it must not lose sub-second precision
+    mtime_ns: int = 0
 
 
 class ScanReport(BaseModel):

@@ -25,7 +25,7 @@ export default function DiffView() {
       setLoading(false);
       if (!r || r.error) {
         setReport(null);
-        setError(r?.error ?? "diff failed");
+        setError(r?.error ?? "diff 生成失败");
       } else {
         setReport(r);
       }
@@ -41,18 +41,18 @@ export default function DiffView() {
     <div className="min-h-screen bg-white flex flex-col">
       <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-4">
         <Link to={`/project/${id}`} className="text-sm text-slate-500 hover:text-slate-700">
-          ← wiki
+          ← Wiki
         </Link>
         <Link to={`/project/${id}/chat`} className="text-sm text-slate-500 hover:text-slate-700">
-          chat
+          问答
         </Link>
         <Link to={`/project/${id}/map`} className="text-sm text-slate-500 hover:text-slate-700">
-          repo map
+          仓库地图
         </Link>
-        <span className="text-sm font-medium text-slate-800">Diff Review</span>
+        <span className="text-sm font-medium text-slate-800">Diff 评审</span>
         {report && (
           <span className="text-xs text-slate-400">
-            {report.changed} changed of {report.file_count} files · in review order
+            {report.changed} 个变更 / 共 {report.file_count} 个文件 · 按评审顺序
           </span>
         )}
       </div>
@@ -62,36 +62,46 @@ export default function DiffView() {
           value={refspec}
           onChange={(e) => setRefspec(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && run(refspec)}
-          placeholder="HEAD, HEAD~3, main...feature, a sha..."
-          className="w-72 px-3 py-1.5 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="HEAD、HEAD~3、main...feature、提交 SHA…"
+          className="w-80 px-3 py-1.5 text-sm font-mono border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           onClick={() => run(refspec)}
           disabled={loading}
           className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
         >
-          {loading ? "Diffing..." : "Review this diff"}
+          {loading ? "正在分析…" : "评审此 diff"}
         </button>
+        <span className="text-xs text-slate-400">最近一次提交可试 HEAD~1..HEAD</span>
       </div>
 
       <div className="flex-1 overflow-auto px-6 py-4">
         {error ? (
-          <p className="text-sm text-red-600 whitespace-pre-wrap">{error}</p>
+          <div>
+            <p className="text-sm text-red-600 whitespace-pre-wrap">{error}</p>
+            <p className="text-xs text-slate-500 mt-2">
+              提示：如果提示仓库没有提交，请先创建提交；如果提示 Git 所有权问题，可检查仓库 ACL 或
+              safe.directory。
+            </p>
+          </div>
         ) : !report ? (
-          <p className="text-sm text-slate-400 animate-pulse">Analyzing diff...</p>
+          <p className="text-sm text-slate-400 animate-pulse">正在分析 diff…</p>
         ) : report.entries.length === 0 ? (
-          <p className="text-sm text-slate-500">No changes against {report.refspec}.</p>
+          <p className="text-sm text-slate-500">
+            相对 {report.refspec} 没有变更。
+            {report.refspec === "HEAD" ? " 可输入 HEAD~1..HEAD 查看最近一次提交。" : ""}
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-slate-400 border-b border-slate-200">
                 <th className="py-2 pr-4 w-10">#</th>
-                <th className="py-2 pr-4 w-14">Chg</th>
-                <th className="py-2 pr-4 w-16">Rank</th>
-                <th className="py-2 pr-4 w-20" title="files that transitively import this one">
-                  Blast
+                <th className="py-2 pr-4 w-14">变更</th>
+                <th className="py-2 pr-4 w-16">排名</th>
+                <th className="py-2 pr-4 w-20" title="间接 import 该文件的文件数">
+                  影响范围
                 </th>
-                <th className="py-2">Path</th>
+                <th className="py-2">路径</th>
               </tr>
             </thead>
             <tbody>
@@ -110,7 +120,7 @@ export default function DiffView() {
                   </td>
                   <td
                     className="py-1.5 pr-4 text-xs text-slate-500"
-                    title={`${e.direct_dependents} direct importers`}
+                    title={`${e.direct_dependents} 个直接 import 者`}
                   >
                     {e.transitive_dependents || "—"}
                   </td>
@@ -126,7 +136,7 @@ export default function DiffView() {
                       </Link>
                     )}
                     {e.old_path && (
-                      <span className="font-mono text-xs text-slate-400"> (was {e.old_path})</span>
+                      <span className="font-mono text-xs text-slate-400">（原路径：{e.old_path}）</span>
                     )}
                   </td>
                 </tr>

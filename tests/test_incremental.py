@@ -24,7 +24,7 @@ class StubLLM:
         self.model = "stub-model"
         self.calls: list[str] = []
 
-    async def complete(self, messages, max_tokens=4096):
+    async def complete(self, messages, max_tokens=4096, response_format=None):
         user = messages[-1]["content"]
         if "Generate a project overview" in user:
             self.calls.append("overview")
@@ -295,7 +295,7 @@ class CrossLinkStubLLM(StubLLM):
     """module a's prose cites b's file in a code span, so the cross-linker
     binds it to modules/b while b exists."""
 
-    async def complete(self, messages, max_tokens=4096):
+    async def complete(self, messages, max_tokens=4096, response_format=None):
         user = messages[-1]["content"]
         m = re.search(r"Document the '([^']+)' module", user)
         if m and m.group(1) == "a":

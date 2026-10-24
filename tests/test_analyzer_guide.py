@@ -20,7 +20,7 @@ class StubLLM:
         self.calls: list[list[dict]] = []
         self.max_tokens_seen: list[int] = []
 
-    async def complete(self, messages, max_tokens=4096):
+    async def complete(self, messages, max_tokens=4096, response_format=None):
         self.calls.append(messages)
         self.max_tokens_seen.append(max_tokens)
         return self.payload

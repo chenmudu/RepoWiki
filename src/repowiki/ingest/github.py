@@ -76,7 +76,7 @@ def ingest_github(
     """shallow-clone a git repo and return a ProjectContext."""
     parsed = parse_git_url(url)
     if not parsed:
-        raise ValueError(f"Can't parse git URL: {url}")
+        raise ValueError(f"无法解析仓库地址：{url}")
 
     host, owner, repo = parsed
     dest = _CLONE_DIR / host / owner / repo
@@ -107,21 +107,21 @@ def ingest_github(
         # clean up partial clone
         if dest.exists():
             shutil.rmtree(dest)
-        raise RuntimeError(f"Clone timed out after {_CLONE_TIMEOUT}s: {display_url}")
+        raise RuntimeError(f"克隆超时（超过 {_CLONE_TIMEOUT} 秒）：{display_url}")
     except subprocess.CalledProcessError as e:
         if dest.exists():
             shutil.rmtree(dest)
         stderr = e.stderr.strip()
         if token:
             stderr = stderr.replace(token, "***")
-        raise RuntimeError(f"Clone failed: {stderr}")
+        raise RuntimeError(f"克隆失败：{stderr}")
 
     # check repo size
     total_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / (1024 * 1024)
     if total_mb > _MAX_REPO_SIZE_MB:
         shutil.rmtree(dest)
         raise RuntimeError(
-            f"Repo too large ({total_mb:.0f} MB > {_MAX_REPO_SIZE_MB} MB limit)"
+            f"仓库体积过大（{total_mb:.0f} MB > {_MAX_REPO_SIZE_MB} MB 上限）"
         )
 
     return ingest_local(dest, max_file_size=max_file_size, max_files=max_files)

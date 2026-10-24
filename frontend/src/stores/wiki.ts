@@ -51,7 +51,7 @@ export const useWikiStore = create<WikiStore>()(
       chatMessages: [],
       loading: false,
       error: "",
-      settings: { apiKey: "", model: "deepseek", language: "en" },
+      settings: { apiKey: "", model: "", language: "zh" },
 
       setProjectId: (id) => set({ projectId: id }),
       setProject: (p) => set({ project: p }),
@@ -98,6 +98,18 @@ export const useWikiStore = create<WikiStore>()(
     }),
     {
       name: "repowiki-store",
+      version: 1,
+      migrate: (persisted: unknown) => {
+        const state = persisted as any;
+        if (state?.settings) {
+          // 这是中文构建：旧会话里的英文/默认模型不应继续覆盖服务端配置
+          state.settings.language = "zh";
+          if (!state.settings.model || state.settings.model === "deepseek") {
+            state.settings.model = "";
+          }
+        }
+        return state;
+      },
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         projectId: state.projectId,

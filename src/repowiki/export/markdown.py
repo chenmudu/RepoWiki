@@ -64,7 +64,7 @@ def export_markdown(
                 removed.append(old_id)
 
     _write_if_changed(out / "_sidebar.md", _sidebar_text(wiki))
-    _write_if_changed(out / "README.md", _readme_text(wiki))
+    _write_if_changed(out / "README.md", _readme_text(wiki, language))
 
     if incremental:
         new_state = {
@@ -97,7 +97,7 @@ def _sidebar_text(wiki: Wiki) -> str:
     return "\n".join(sidebar_lines) + "\n"
 
 
-def _readme_text(wiki: Wiki) -> str:
+def _readme_text(wiki: Wiki, language: str = "en") -> str:
     # GitHub (and most forges) render README.md when you open the folder,
     # whereas _sidebar.md is a docsify convention and index.md is not
     # auto-rendered — so a wiki committed to a repo would otherwise show a
@@ -107,7 +107,7 @@ def _readme_text(wiki: Wiki) -> str:
     if overview is not None and overview.content.strip():
         readme_lines.append(overview.content.strip())
         readme_lines.append("")
-    readme_lines.append("## Contents\n")
+    readme_lines.append("## 目录\n" if language == "zh" else "## Contents\n")
     for item in wiki.sidebar:
         if item.page_id:
             readme_lines.append(f"- [{item.title}]({item.page_id}.md)")

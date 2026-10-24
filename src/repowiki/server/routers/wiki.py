@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from repowiki.server.app import get_projects
+from repowiki.server.app import ensure_loaded
 
 router = APIRouter()
 
@@ -12,10 +12,9 @@ router = APIRouter()
 @router.get("/project/{project_id}/wiki")
 async def get_wiki(project_id: str):
     """get the full wiki structure (sidebar + page list)."""
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("wiki"):
-        return {"error": "Wiki not ready"}
+        return {"error": "Wiki 尚未生成完成"}
 
     wiki = proj["wiki"]
     return {
@@ -31,14 +30,13 @@ async def get_wiki(project_id: str):
 @router.get("/project/{project_id}/wiki/{page_id:path}")
 async def get_page(project_id: str, page_id: str):
     """get a single wiki page content."""
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("wiki"):
-        return {"error": "Wiki not ready"}
+        return {"error": "Wiki 尚未生成完成"}
 
     page = proj["wiki"].get_page(page_id)
     if not page:
-        return {"error": f"Page '{page_id}' not found"}
+        return {"error": f"页面 {page_id} 不存在"}
 
     return {
         "id": page.id,
@@ -50,10 +48,9 @@ async def get_page(project_id: str, page_id: str):
 @router.get("/project/{project_id}/file/{file_path:path}")
 async def get_file(project_id: str, file_path: str):
     """get file content with language detection."""
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("project"):
-        return {"error": "Project not ready"}
+        return {"error": "项目尚未就绪"}
 
     project = proj["project"]
     for f in project.files:
@@ -65,7 +62,7 @@ async def get_file(project_id: str, file_path: str):
                 "lines": f.lines,
             }
 
-    return {"error": f"File '{file_path}' not found"}
+    return {"error": f"文件 {file_path} 不存在"}
 
 
 @router.get("/project/{project_id}/cards")
@@ -73,10 +70,9 @@ async def get_cards(project_id: str):
     """get the structured knowledge cards (same data the cards page renders)."""
     import dataclasses
 
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("wiki"):
-        return {"error": "Wiki not ready"}
+        return {"error": "Wiki 尚未生成完成"}
 
     wiki = proj["wiki"]
     return {
@@ -88,10 +84,9 @@ async def get_cards(project_id: str):
 @router.get("/project/{project_id}/graph")
 async def get_graph(project_id: str):
     """get the dependency graph as nodes + edges."""
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("project"):
-        return {"error": "Project not ready"}
+        return {"error": "项目尚未就绪"}
 
     from repowiki.core.graph import DependencyGraph
     graph = DependencyGraph.build_from_project(proj["project"])

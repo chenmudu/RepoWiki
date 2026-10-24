@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -11,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from repowiki.core.cache import Cache
 from repowiki.core.models import FileInfo, ProjectContext
+from repowiki.core.projects import ProjectRegistry
 from repowiki.core.wiki_builder import SidebarItem, Wiki, WikiPage
 from repowiki.server import app as app_module
 from repowiki.server.models import ProjectInfo
@@ -18,8 +21,11 @@ from repowiki.server.routers import scan as scan_module
 
 
 def _client(monkeypatch, tmp_path):
-    # keep the lifespan cache out of the real home directory
+    # keep the lifespan cache and the project history out of the real home directory
     monkeypatch.setattr(app_module, "Cache", lambda: Cache(tmp_path / "cache.db"))
+    monkeypatch.setattr(
+        scan_module, "get_registry", lambda: ProjectRegistry(tmp_path / "projects.json")
+    )
     return TestClient(app_module.create_app(static_dir=tmp_path / "missing"))
 
 
@@ -61,7 +67,7 @@ def _seed_wiki_project(monkeypatch, *, wiki_ready: bool = True) -> None:
         "info": ProjectInfo(id="p1", name="demo", status="done"),
         "wiki": wiki if wiki_ready else None,
         "project": project,
-        "progress": ["Ingesting project...", "Done!"],
+        "progress": ["正在导入项目...", "完成！"],
     })
 
 
@@ -98,7 +104,7 @@ def test_get_project_known_and_unknown(monkeypatch, tmp_path):
 
     with _client(monkeypatch, tmp_path) as client:
         assert client.get("/api/project/p1").json()["name"] == "demo"
-        assert client.get("/api/project/nope").json() == {"error": "Project not found"}
+        assert client.get("/api/project/nope").json() == {"error": "项目不存在"}
 
 
 def test_status_stream_replays_progress_then_done(monkeypatch, tmp_path):
@@ -106,9 +112,18 @@ def test_status_stream_replays_progress_then_done(monkeypatch, tmp_path):
 
     with _client(monkeypatch, tmp_path) as client:
         body = client.get("/api/project/p1/status").text
-        assert '"step": "Ingesting project..."' in body
-        assert '"status": "done"' in body
-        assert '"error": "not found"' in client.get("/api/project/nope/status").text
+        # SSE payloads are JSON-escaped, so decode instead of matching raw text
+        events = [
+            json.loads(line[len("data: "):])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert [e["step"] for e in events if "step" in e] == ["正在导入项目...", "完成！"]
+        assert [e["status"] for e in events if "status" in e] == ["done"]
+        missing = json.loads(
+            client.get("/api/project/nope/status").text.splitlines()[0][len("data: "):]
+        )
+        assert missing == {"error": "项目不存在"}
 
 
 # --- wiki router ---
@@ -133,8 +148,8 @@ def test_wiki_not_ready_and_unknown_project(monkeypatch, tmp_path):
     _seed_wiki_project(monkeypatch, wiki_ready=False)
 
     with _client(monkeypatch, tmp_path) as client:
-        assert client.get("/api/project/p1/wiki").json() == {"error": "Wiki not ready"}
-        assert client.get("/api/project/nope/wiki").json() == {"error": "Wiki not ready"}
+        assert client.get("/api/project/p1/wiki").json() == {"error": "Wiki 尚未生成完成"}
+        assert client.get("/api/project/nope/wiki").json() == {"error": "Wiki 尚未生成完成"}
 
 
 def test_get_page_found_and_missing(monkeypatch, tmp_path):
@@ -145,7 +160,7 @@ def test_get_page_found_and_missing(monkeypatch, tmp_path):
         assert page["title"] == "util"
         assert page["content"] == "utilities\n"
         missing = client.get("/api/project/p1/wiki/modules/nope").json()
-        assert missing == {"error": "Page 'modules/nope' not found"}
+        assert missing == {"error": "页面 modules/nope 不存在"}
 
 
 def test_get_file_falls_back_to_preview(monkeypatch, tmp_path):
@@ -158,7 +173,7 @@ def test_get_file_falls_back_to_preview(monkeypatch, tmp_path):
         big = client.get("/api/project/p1/file/big.py").json()
         assert big["content"] == ("x = 1\n" * 500)[:200]  # preview is capped at 200 chars
         assert client.get("/api/project/p1/file/nope.py").json() == {
-            "error": "File 'nope.py' not found"
+            "error": "文件 nope.py 不存在"
         }
 
 
@@ -180,4 +195,4 @@ def test_graph_not_ready(monkeypatch, tmp_path):
     app_module._projects["p1"]["project"] = None
 
     with _client(monkeypatch, tmp_path) as client:
-        assert client.get("/api/project/p1/graph").json() == {"error": "Project not ready"}
+        assert client.get("/api/project/p1/graph").json() == {"error": "项目尚未就绪"}

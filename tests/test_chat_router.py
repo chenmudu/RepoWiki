@@ -91,3 +91,54 @@ def test_chat_router_without_history_keeps_old_shape(monkeypatch, tmp_path):
 
     assert resp.status_code == 200
     assert [m["role"] for m in StubLLM.captured] == ["system", "user"]
+
+
+# --- model selection ---
+
+class ModelSpyLLM:
+    model: str | None = None
+
+    def __init__(self, *args, **kwargs):
+        ModelSpyLLM.model = kwargs.get("model")
+
+    async def stream(self, messages):
+        yield "ok"
+
+
+def test_chat_router_uses_the_model_from_the_request(monkeypatch, tmp_path):
+    _seed_project(monkeypatch)
+    monkeypatch.setattr("repowiki.llm.client.LLMClient", ModelSpyLLM)
+
+    with _client(monkeypatch, tmp_path) as client:
+        resp = client.post(
+            "/api/project/p1/chat",
+            json={"question": "q", "model": "qwen"},
+            headers={"x-api-key": "test-key"},
+        )
+
+    assert resp.status_code == 200
+    assert ModelSpyLLM.model == "openai/qwen3.7-plus"
+
+
+def test_chat_router_falls_back_to_the_server_model(monkeypatch, tmp_path):
+    from repowiki.config import Config
+    from repowiki.server.routers import chat as chat_module
+
+    class FakeConfig:
+        @classmethod
+        def load(cls):
+            return Config(model="server-model", api_key="k")
+
+    _seed_project(monkeypatch)
+    monkeypatch.setattr(chat_module, "Config", FakeConfig)
+    monkeypatch.setattr("repowiki.llm.client.LLMClient", ModelSpyLLM)
+
+    with _client(monkeypatch, tmp_path) as client:
+        resp = client.post(
+            "/api/project/p1/chat",
+            json={"question": "q"},
+            headers={"x-api-key": "test-key"},
+        )
+
+    assert resp.status_code == 200
+    assert ModelSpyLLM.model == "server-model"

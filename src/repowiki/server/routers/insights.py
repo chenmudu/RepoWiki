@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from repowiki.server.app import get_projects
+from repowiki.server.app import ensure_loaded
 from repowiki.server.models import DiffRequest
 
 router = APIRouter()
 
 
 def _project_or_404(project_id: str):
-    proj = get_projects().get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or proj.get("project") is None:
-        return None, JSONResponse({"error": "Project not found"}, status_code=404)
+        return None, JSONResponse({"error": "项目不存在"}, status_code=404)
     return proj["project"], None
 
 
@@ -28,7 +29,7 @@ def get_repo_map(project_id: str, top: int = 50):
     if err:
         return err
     if top <= 0:
-        return JSONResponse({"error": "top must be greater than zero"}, status_code=400)
+        return JSONResponse({"error": "top 必须大于 0"}, status_code=400)
 
     from repowiki.core.graph import DependencyGraph
 
@@ -55,7 +56,7 @@ def get_diff_review(project_id: str, req: DiffRequest):
         return err
     refspec = req.refspec.strip()
     if not refspec:
-        return JSONResponse({"error": "refspec must not be empty"}, status_code=400)
+        return JSONResponse({"error": "refspec 不能为空"}, status_code=400)
 
     from repowiki.core.diff import build_diff_report
     from repowiki.core.graph import DependencyGraph
@@ -64,12 +65,11 @@ def get_diff_review(project_id: str, req: DiffRequest):
     try:
         report = build_diff_report(project.root, refspec, graph)
     except Exception as exc:
-        detail = f"cannot diff '{refspec}' in {project.name}: {exc}"
+        detail = f"无法在 {project.name} 上生成 diff（{refspec}）：{exc}"
         if _is_shallow_clone(project.root):
             detail += (
-                ". The cached clone is shallow (depth 1), so only refs in the "
-                "shallow history resolve; scan a local full clone to unlock "
-                "arbitrary refspecs"
+                "。该仓库是浅克隆（depth 1），只能解析浅历史中的 ref；"
+                "扫描本地完整克隆可解锁任意 refspec。"
             )
         return JSONResponse({"error": detail}, status_code=400)
 
@@ -97,7 +97,10 @@ def get_diff_review(project_id: str, req: DiffRequest):
 def _is_shallow_clone(root: str) -> bool:
     try:
         out = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--is-shallow-repository"],
+            [
+                "git", "-c", f"safe.directory={Path(root).resolve().as_posix()}",
+                "-C", root, "rev-parse", "--is-shallow-repository",
+            ],
             capture_output=True,
             timeout=5,
         )

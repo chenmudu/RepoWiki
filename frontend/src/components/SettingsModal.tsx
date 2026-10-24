@@ -10,7 +10,7 @@ export default function SettingsModal({ onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Settings</h2>
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">设置</h2>
 
         <div className="space-y-4">
           <div>
@@ -22,20 +22,23 @@ export default function SettingsModal({ onClose }: Props) {
                 updateSettings({ apiKey: e.target.value });
                 localStorage.setItem("repowiki_api_key", e.target.value);
               }}
-              placeholder="sk-..."
+              placeholder="留空则使用服务端配置"
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
             />
-            <p className="text-xs text-slate-400 mt-1">DeepSeek, OpenAI, or Anthropic API key</p>
+            <p className="text-xs text-slate-400 mt-1">
+              留空时使用 ~/.repowiki/config.json 中的密钥；填写则只对本次浏览器的请求生效。
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Model</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">模型</label>
             <select
               value={settings.model}
               onChange={(e) => updateSettings({ model: e.target.value })}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:border-blue-500 outline-none"
             >
-              <option value="deepseek">DeepSeek V3.2</option>
+              <option value="">使用服务端配置（推荐）</option>
+              <option value="deepseek">DeepSeek</option>
               <option value="opus">Claude Opus 4.6</option>
               <option value="claude">Claude Sonnet 4.6</option>
               <option value="gpt">GPT-5.4</option>
@@ -47,17 +50,20 @@ export default function SettingsModal({ onClose }: Props) {
               <option value="glm">GLM-5</option>
               <option value="minimax">MiniMax M2.7</option>
             </select>
+            <p className="text-xs text-slate-400 mt-1">
+              扫描和问答都使用这里选择的模型；选“使用服务端配置”时读取 ~/.repowiki/config.json。
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Language</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">语言</label>
             <select
               value={settings.language}
               onChange={(e) => updateSettings({ language: e.target.value })}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:border-blue-500 outline-none"
             >
-              <option value="en">English</option>
               <option value="zh">中文</option>
+              <option value="en">English</option>
               <option value="ja">日本語</option>
               <option value="ko">한국어</option>
             </select>
@@ -69,7 +75,7 @@ export default function SettingsModal({ onClose }: Props) {
             onClick={onClose}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
-            Done
+            完成
           </button>
         </div>
       </div>

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 
 from repowiki.config import Config
-from repowiki.server.app import get_projects
+from repowiki.server.app import ensure_loaded
 from repowiki.server.models import ChatRequest
 
 router = APIRouter()
@@ -18,10 +18,9 @@ router = APIRouter()
 @router.post("/project/{project_id}/chat")
 async def chat(project_id: str, req: ChatRequest, x_api_key: str | None = Header(None)):
     """SSE streaming chat response with RAG retrieval."""
-    projects = get_projects()
-    proj = projects.get(project_id)
+    proj = ensure_loaded(project_id)
     if not proj or not proj.get("project"):
-        return {"error": "Project not ready"}
+        return {"error": "项目尚未就绪"}
 
     project = proj["project"]
 
@@ -70,9 +69,13 @@ async def chat(project_id: str, req: ChatRequest, x_api_key: str | None = Header
     cfg = Config.load()
     if x_api_key:
         cfg.api_key = x_api_key
+    if req.model:
+        from repowiki.config import resolve_model
+
+        cfg.model = resolve_model(req.model)
 
     if not cfg.api_key:
-        return {"error": "No API key configured"}
+        return {"error": "未配置 API Key"}
 
     from repowiki.llm.client import LLMClient
     from repowiki.llm.prompts import build_chat_prompt
