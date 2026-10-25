@@ -36,7 +36,7 @@ def test_root_without_frontend_shows_build_instructions(monkeypatch, tmp_path):
         resp = client.get("/")
         assert resp.status_code == 200
         assert "npm run build" in resp.text
-        assert "PyPI" in resp.text
+        assert "include the frontend" in resp.text
         assert client.get("/api/health").status_code == 200
 
 

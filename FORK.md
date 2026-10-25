@@ -1,16 +1,31 @@
-# Local patches on top of he-yufeng/RepoWiki
+# This is a personal fork
 
-This clone carries local changes that are **not** upstream. They exist because
-the upstream release does not handle Chinese output, Windows Git ownership
-checks, or the local-path flow in the web UI.
+[中文](FORK.zh-CN.md)
+
+Fork of [he-yufeng/RepoWiki](https://github.com/he-yufeng/RepoWiki), maintained
+for my own use. MIT licensed; the original copyright is Yufeng He's. Nothing
+here is published to PyPI and no support is offered.
 
 - Upstream base: `29d9029b4c770b66772c1d565f2d5b5980074147` (2026-10-23)
 - This repository (`chenmudu/RepoWiki`, branch `main`) is the source of truth;
-  every patch below is committed here.
-- Virtualenv: any virtualenv with `pip install -e ".[web]"`; the CLI is `repowiki`
-- Previous wheel install (rollback): a separate virtualenv with the PyPI 0.6.0 wheel
+  every difference below is committed here.
+- Virtualenv: any venv with `pip install -e ".[web]"`; the CLI is `repowiki`
+- Previous wheel install (rollback): a separate venv with the PyPI 0.6.0 wheel
 
-## Why each patch exists
+## How a change gets decided here
+
+- Correctness first, then cost, then time.
+- No LLM call on a path that does not need one. A deterministic answer beats a
+  generated one; a cached answer beats a fresh one when the inputs are identical.
+- Chinese-first UI and output. Windows is the primary platform, not a port.
+- One user, loopback only. No accounts, no multi-tenant, no remote hardening.
+- Local behavior belongs in its own module. Edits to upstream files stay small
+  and contiguous — a notice, a link, a removed section — so a sync stays cheap.
+  Any change in behavior gets a row in the table below.
+- README, FORK and CHANGELOG are fork-owned. On a sync conflict keep the local
+  version, and hand-carry any new upstream feature description into the table.
+
+## Differences from upstream
 
 | Area | Problem | Fix |
 | --- | --- | --- |
@@ -41,6 +56,23 @@ checks, or the local-path flow in the web UI.
 | `frontend/src/lib/api.ts`, `frontend/src/pages/Home.tsx` | A finished scan only reached the one page instance that started it: reload the page, or lose the SSE connection, and the result was silent — a dropped connection was even reported as a scan failure | The project list is the single completion path. While any record is `pending`/`scanning` the list is polled every 3 s, the card reads 索引中… from the server's status, and a dropped progress stream means the text stopped, not that the scan failed |
 | `server/models.py`, `server/routers/chat.py` | The model picked in Settings applied to scans but not to Q&A | `ChatRequest.model` follows the same override as a scan |
 | `frontend/src/stores/wiki.ts` | The default model `deepseek` overrode the server-side config | Model defaults to empty ("use server config"); persisted state is migrated to Chinese |
+
+When upstream absorbs something from this table, delete its row and note the
+change in [CHANGELOG.md](CHANGELOG.md).
+
+## Tracking upstream
+
+Upstream is a remote, not the source of truth; this `main` is.
+
+```bash
+git remote add upstream https://github.com/he-yufeng/RepoWiki.git   # once
+git fetch upstream
+git merge upstream/main
+```
+
+A conflict should land in the fork notice, the metadata links or the removed
+upstream sections. If it lands in behavior code, the local change was in the
+wrong place.
 
 ## Project history
 
@@ -96,7 +128,7 @@ it. The registry keeps the *input* of every scan instead:
   as soon as the list reports `done`.
 - The server only rebuilds when it is asked to.
 
-## Rebuild
+## Build and run
 
 ```bash
 cd frontend
@@ -106,8 +138,6 @@ npm run build          # tsc --noEmit && vite build -> src/repowiki/server/stati
 cd ..
 pip install -e ".[web]"
 ```
-
-## Run
 
 `repowiki serve` binds `0.0.0.0` without authentication, so the web UI is
 started explicitly on the loopback interface instead (from the repository
@@ -123,7 +153,8 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
 emoji crash the CLI without it.
 
 A small launcher script outside the repository starts the same command in a
-double-clicked console.
+double-clicked console; the desktop "RepoWiki Restart" shortcut is the normal
+way to reload Python.
 
 ## Verify
 
@@ -134,5 +165,11 @@ repowiki diff <repo> HEAD~1..HEAD
 
 ## Rollback
 
-A separate virtualenv with the PyPI 0.6.0 wheel still works; point `repowiki`
-at it to switch back.
+A separate virtualenv with the PyPI 0.6.0 wheel still works:
+`D:\Tools\repowiki-venv\Scripts\repowiki.exe`. Point `D:\Tools\repowiki.cmd`
+back at it to switch to the old version.
+
+## License
+
+MIT. The upstream copyright notice stays in [LICENSE](LICENSE); local changes
+are covered by the same license.

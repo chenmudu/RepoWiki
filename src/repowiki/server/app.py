@@ -29,9 +29,9 @@ pre { padding: 0.8rem 1rem; }
 <h1>RepoWiki web UI is not available</h1>
 <p>The API itself is running, see <a href="/docs">/docs</a>, but this
 installation does not contain the built frontend.</p>
-<p>Wheels published to PyPI ship the web UI. If you installed from PyPI and
-ended up here, please
-<a href="https://github.com/he-yufeng/RepoWiki/issues">open an issue</a>.</p>
+<p>Wheels that include the frontend ship the web UI. If you built this from
+source and still ended up here, please
+<a href="https://github.com/chenmudu/RepoWiki/issues">open an issue</a>.</p>
 <p>Running from a source checkout? Build the frontend once, then restart:</p>
 <pre>cd frontend
 npm ci

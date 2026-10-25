@@ -1,196 +1,60 @@
-<div align="center">
+# RepoWiki
 
-<img src="docs/banner.png" alt="RepoWiki — 为任意代码库生成 wiki 文档" width="100%">
+个人自用的 [RepoWiki](https://github.com/he-yufeng/RepoWiki) 分支：从终端或浏览器
+给代码库生成 wiki。中文优先，在 Windows 上跑。
 
-[![PyPI](https://img.shields.io/pypi/v/repowiki.svg)](https://pypi.org/project/repowiki/)
-[![Python](https://img.shields.io/pypi/pyversions/repowiki.svg)](https://pypi.org/project/repowiki/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/he-yufeng/RepoWiki/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/RepoWiki/actions/workflows/ci.yml)
+不发布到 PyPI，也不承诺提供支持。为什么和上游不同见
+[FORK.zh-CN.md](FORK.zh-CN.md)，改了什么见
+[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
-[**在线演示**](https://he-yufeng.github.io/RepoWiki/) · [**快速开始**](#快速开始) · [**工作原理**](#工作原理) · [English](README.md)
+## 跑起来
 
-</div>
-
-**开源 DeepWiki 替代品** — 从终端或浏览器为任意代码仓库生成完整 wiki 文档。
-
-在线演示是 RepoWiki 吃自家狗粮的产物：用 `repowiki scan . --site` 扫描本仓库生成，部署在 GitHub Pages。
-
-## 为什么选 RepoWiki？
-
-| | DeepWiki | deepwiki-open | **RepoWiki** |
-|---|---------|--------------|-------------|
-| 部署方式 | SaaS，不可自托管 | Docker Compose | **`pip install repowiki`** |
-| 本地仓库 | 不支持 | 不支持 | **原生支持** |
-| CLI | 无 | 无 | **有** |
-| Web UI | 有 | 有 | **有** |
-| 导出格式 | 仅网页 | 仅网页 | **Markdown / JSON / HTML** |
-| 阅读指南 | 无 | 无 | **PageRank 排名 + 阅读路径** |
-| 终端问答 | 无 | 无 | **`repowiki chat`** |
-| 依赖 | N/A | Docker + PostgreSQL | **Python + SQLite** |
-
-## 快速开始
+首次构建：
 
 ```bash
-pip install repowiki
-
-# 设置 API Key（DeepSeek、OpenAI、Anthropic 等）
-export DEEPSEEK_API_KEY=<your-api-key>
-# 或者
-repowiki config set api_key <your-api-key>
-
-# 扫描本地项目
-repowiki scan ./my-project
-
-# 扫描 GitHub 仓库
-repowiki scan https://github.com/pallets/flask
-
-# 扫描私有 GitHub 仓库（token 不会落进日志或报错）
-GITHUB_TOKEN=ghp_xxx repowiki scan https://github.com/acme/private-repo
-
-# 生成自包含 HTML 并打开
-repowiki scan ./my-project --format html --open
-
-# 启动 Web 界面（PyPI 安装包自带构建好的前端）
-pip install repowiki[web]
-repowiki serve ./my-project   # 可选：启动时直接加载一个项目
+cd frontend && npm ci && npm run build
+pip install -e ".[web]"
+repowiki config set api_key <key>     # 也可用 DEEPSEEK_API_KEY 等环境变量
 ```
 
-扫描时会遵守 `.gitignore` 和 `.repowikiignore`，并默认跳过 `.env`、`.env.local`、`.npmrc`、`.pypirc`、SSH 私钥等本地敏感文件，避免把不该进入文档上下文的内容喂给后续分析。
-
-## 核心功能
-
-- **结构化 wiki** — 项目概览、逐模块文档、自动识别的架构（含 Mermaid 图），以及基于 PageRank 的"从这里开始读"路径。
-- **页面交叉链接**：页面里反引号包住的符号名或文件路径，如果正好对应另一个 wiki 页面，就会自动变成指向那一页的链接（Markdown 里是相对 .md 链接，HTML 导出里是页内跳转）。围栏代码块原样保留；同一个名字被多个页面定义时，链到第一个页面。
-- **全局符号索引**：索引页汇总分析记录的所有关键符号，先按类别（class、function 等）分组，组内再按模块归类，每个符号都链回所属模块页；没有记录符号的项目不生成该页。
-- **测试地图**：一页列出每个源码文件被哪些测试文件 import、测试从它那里拿了哪些名字，同时点名没有任何测试 import 的源码文件、以及没有碰到任何产品代码的测试文件。和调用图、数据流图一样是确定性产出：这里的「无测试」只表示「没有测试 import 它」，是「去哪找测试」的路标，不是覆盖率结论。
-- **知识卡片**：卡片页把每个模块压成一张卡片：一句话用途、文件数、暴露的符号与关键概念、模块内链接、最先该打开的入口文件；仓库有可用 git 历史时，还会标出提交次数最多的改动热点文件。在长文档之前先翻一遍卡片，是挑入口最快的方式。
-- **增量重跑**：输出目录里的 `.repowiki-state.json` 记录每个页面由哪些输入生成，再次扫描只重新生成源码有变化的页面，并清理被删模块对应的页面；JSON 和 HTML 导出在内容没有变化时直接不写盘。加 `--full` 可强制全量重建。没变的页面连 LLM 调用都省掉：分析结果存在按内容寻址的 SQLite 缓存里（`~/.repowiki/cache.db`），小改之后重扫对没动的模块零 API 调用。想提交后自动刷新，在 `.git/hooks/post-commit` 里触发一次 `repowiki scan . --site -o docs/wiki &`，或在 CI 里 push 后跑一次——缓存保证了它足够便宜，不需要常驻监听进程。
-- **diff 的评审顺序** — `repowiki diff . main...HEAD` 把一个变更涉及的文件按真实重要性排序（仓库全局 PageRank，外加每个文件的爆炸半径：有多少文件 import 它），评审从真正要紧的地方开始读。被删文件排在最后但不会消失；`--format json` 把同一份评审顺序交给 agent。
-- **import 感知排名** — 先解析 Python 和 JS/TS 的 import 再排名，并跳过 minified/生成式 bundle，避免浪费 LLM 上下文。
-- **超大文件的符号骨架** — 过去超出单文件上下文预算的 Python 模块只贡献前 4096 个字符。现在分析器看到的是 ast 提取的符号骨架：每个顶层类和函数的签名与 docstring，2000 行的模块按结构被读完，而不是按开头被截断。
-- **覆盖率如实标注** — 扫不下整个仓库时绝不装成扫完了：概览页和 CLI 都会明确标出部分覆盖（实际纳入 vs 候选文件数、超大文件与被排除目录），wiki 不会悄悄自称完整。
-- **LLM 失败也如实** — 限流、断连会自动退避重试；实在分析不出来的模块，跑完时点名警告哪些模块只拿到了占位文档，不会悄悄交付半空的 wiki。
-- **三种导出格式** — 可直接提交的 Markdown 目录、结构化 JSON，或自包含、随手能分享的 HTML 单文件（含图表）。
-- **静态站点发布**：`repowiki scan . --site` 会在 Markdown 导出目录里生成 docsify 加载页（`index.html` 和 `.nojekyll`），把目录推到 GitHub Pages 上就是一个能直接浏览的文档站。
-- **Web 查看器 + 终端问答**：三栏浏览器界面，或 `repowiki chat .` 在终端里做基于源码的问答。问答支持多轮对话：之前的问答会带进每次请求，Web 界面和 CLI 里都能追问。每个回答的来源都精确到行：CLI 在回答下方打印 `文件:起始行-结束行` 的来源尾行，Web 界面里每条引用都能点进文件查看器、直达对应行区间（`/project/<id>/file/<路径>#L120-L140` 这样的链接刷新、转发都有效）。两个零 LLM 的分析也进了 Web 界面：侧栏的 Repo Map 和 Diff Review 按钮给出的就是 CLI 打印的同一份排序地图和评审顺序，每一行都能点进文件查看器。从 URL 扫进来的仓库按浅克隆缓存，diff 只能引用浅历史里的提交；想 diff 任意区间就扫本地完整克隆。内置 TF-IDF 检索（无需 embedding 服务），索引按文件粒度落盘复用：对没动过的仓库第二次启动直接热启动，改几个文件也只重建这几个文件的分块，不再全量重扫。索引之上还有一层模块卡片通道：分析器写出的卡片带着原始代码没有的自然语言词汇，换种说法提问、和代码零词面重叠时也能借卡片摸到正确的文件；卡片只补漏，不会把直接命中的结果挤出列表。
-- **CLI 优先** — 不需要 Docker、数据库或浏览器。
+启动（只监听回环；桌面快捷方式 “RepoWiki Restart” 跑的是同一条命令）：
 
 ```bash
-repowiki scan .                    # 生成 wiki
-repowiki scan . --full             # 忽略增量状态，全量重建每个页面
-repowiki scan . -f html --open     # 浏览器打开
-repowiki scan . -l zh              # 中文输出
-repowiki chat .                    # 多轮追问的代码问答，本次会话有记忆
-repowiki map .                     # 按真实依赖排序的仓库地图，零 LLM 调用
-repowiki map . --format json       # 给 agent 用的可入 prompt 排序清单
-repowiki diff . main...HEAD        # diff 的评审顺序：重要性 + 爆炸半径
-repowiki scan . --site             # 在 Markdown 导出基础上生成 GitHub Pages 加载页
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
+  python -m uvicorn repowiki.server.app:create_app \
+  --factory --host 127.0.0.1 --port 8765
 ```
 
-## 语言与模型
+打开 <http://127.0.0.1:8765/>。项目列表存在 `~/.repowiki/projects.json`，重启不丢。
 
-识别 Python、JavaScript、TypeScript、Go、Rust、Java、Kotlin、C/C++、C#、Ruby、PHP、Swift 等 30+ 种语言。litellm 的 100+ 提供商都能用，用别名选一个，或直接传模型名：
+## 能做什么
 
-```bash
-repowiki config set model deepseek   # deepseek / claude / gpt / gemini / qwen / kimi / glm / mimo ...
-repowiki scan . -m gpt               # 或直接传模型名
-```
+- 结构化 wiki：概览、模块文档、架构图（含确定性的调用图/数据流图）、阅读路径。
+- 增量重扫：只重生成源码变了的页面，LLM 结果走内容哈希缓存。
+- 知识卡片、测试地图、仓库地图、diff 评审顺序。
+- Web UI 加 `repowiki chat` 终端问答，答案带 `file:start-end` 出处。
+- 导出 Markdown / JSON / 自包含 HTML，`--site` 可直接上 GitHub Pages。
 
-`mimo` 和 `mimo-pro` 别名自带小米端点，有 MiMo API key 就能直接用。其他 OpenAI 兼容端点可以用 `repowiki config set api_base https://your-gateway/v1` 接入。
+## 常用命令
 
-## 配置
+| 命令 | 说明 |
+| --- | --- |
+| `repowiki scan <path\|url>` | 生成 wiki（花 token） |
+| `repowiki chat <repo>` | 终端多轮问答 |
+| `repowiki map <repo> --format json` | 阅读顺序，零 LLM 调用 |
+| `repowiki diff <repo> <refspec>` | 变更评审顺序，零 LLM 调用 |
 
-RepoWiki 按以下顺序查找配置：
-1. 命令行参数（`-m`、`-l`、`-o`）
-2. 环境变量（`REPOWIKI_MODEL`、`REPOWIKI_API_KEY`、`REPOWIKI_API_BASE`）
-3. 配置文件（`~/.repowiki/config.json`）
-4. 各提供商专用环境变量（`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`）
+模型用 `repowiki config set model deepseek`（claude / gpt / gemini / qwen / kimi /
+glm / mimo 等），中文输出用 `-l zh`。
 
-私有 GitHub 仓库用 `GITHUB_TOKEN`（或 `GH_TOKEN`）：clone 走认证连接，token 只出现在 git 调用内部，不落日志、不进报错。
+## 文档
 
-## 项目结构
+- [FORK.zh-CN.md](FORK.zh-CN.md) — 这个分支是什么、怎么决定改动、怎么跟上游同步
+- [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md) — 改动时间线
+- [docs/agent-cli.zh-CN.md](docs/agent-cli.zh-CN.md) — 给 coding agent 的 CLI 说明
+- [skills/repowiki/SKILL.md](skills/repowiki/SKILL.md) — 让 agent 先 map 再读代码
 
-```
-RepoWiki/
-├── src/repowiki/
-│   ├── cli.py              # Click CLI，含 scan/serve/chat/config 命令
-│   ├── config.py           # 配置管理
-│   ├── core/
-│   │   ├── scanner.py      # 文件扫描 + 语言识别
-│   │   ├── analyzer.py     # 多步 LLM 分析流水线
-│   │   ├── graph.py        # 依赖图 + PageRank
-│   │   ├── wiki_builder.py # Wiki 页面组装
-│   │   ├── rag.py          # 面向问答的 TF-IDF 检索
-│   │   ├── cache.py        # SQLite 缓存
-│   │   ├── skeleton.py     # 大文件的符号级骨架提取
-│   │   ├── diff.py         # git diff 的审阅顺序排序
-│   │   ├── models.py       # pydantic 数据模型
-│   │   └── state.py        # 增量重生成状态
-│   ├── llm/
-│   │   ├── client.py       # litellm 异步封装
-│   │   └── prompts.py      # 结构化 prompt 模板
-│   ├── ingest/
-│   │   ├── local.py        # 本地目录导入
-│   │   └── github.py       # 带缓存的 git clone
-│   ├── export/
-│   │   ├── markdown.py     # Markdown 目录导出
-│   │   ├── json_export.py  # JSON 导出
-│   │   ├── html.py         # 自包含 HTML 导出
-│   │   └── site.py         # GitHub Pages 站点加载器
-│   └── server/             # FastAPI web 后端
-├── frontend/               # React + Vite + TailwindCSS
-├── pyproject.toml
-└── LICENSE
-```
+## 上游与许可
 
-## 工作原理
-
-![RepoWiki 流程](docs/architecture.png)
-
-1. **扫描** — 遍历目录树，过滤二进制、生成式 bundle 和超大文件，检测语言和入口文件
-2. **建图** — 解析 6 种语言的 import，正确处理 Python 包内相对导入和
-   JavaScript / TypeScript 相对模块，再用 PageRank 计算文件重要性
-3. **分析** — 4 步 LLM 分析（概览、模块、架构、阅读指南），并发执行
-4. **缓存** — SQLite 按内容 hash 缓存，重新扫描时跳过未变更文件
-5. **导出** — 组装 wiki 页面，注入 Mermaid 图和源码链接，按选定格式输出
-
-## 开发
-
-```bash
-git clone https://github.com/he-yufeng/RepoWiki.git
-cd RepoWiki
-
-# 后端
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,web]"
-
-# 前端
-cd frontend && npm install && npm run dev
-
-# 启动后端
-repowiki serve --port 8000
-
-# 测试 + 检索评测
-pytest tests/
-python evals/run_eval.py
-```
-
-检索评测（`evals/`）把夹具仓库跑过真实的扫描与索引链路，检查已知答案所在的文件还能不能被检索回来，普通通道和模块卡片通道都查（卡片通道的夹具里专门有换说法和中文提问）。它在 pytest 里是硬门槛，在 CI 里是软门槛（标红但不阻塞）；有意改动检索行为后跑 `python evals/run_eval.py --update-baseline` 记录新基线。
-
-## 后续规划
-
-生成、Web 界面、图表这几块已经能用，页面之间互相链接，重跑只重新生成源码有变化的页面，`scan --site` 能一键导出可直接部署 GitHub Pages 的静态站点，仓库地图和 diff 评审顺序在 CLI 和 Web 界面里都能跑。架构页在模型写的图之外还带两张确定性 AST 视图：Python 调用图（谁调谁）和数据流图（项目里的每个类，谁创建它、谁接收它），另有一张测试地图页索引哪些测试文件 import 了哪些源码文件——都走 AST 而不是让模型猜，所以即使带模型的部分来自缓存，结构性信息也始终是对的。
-
-## 相关项目
-
-如果 RepoWiki 帮你摸清了一个代码库，下面几个我做的东西也许你会喜欢：
-
-- [**CoreCoder**](https://github.com/he-yufeng/CoreCoder) — 想搞懂一个 coding agent 到底怎么运作？把整套约 1000 行引擎从头读到尾，而不是当黑箱。
-- [**FindJobs-Agent**](https://github.com/he-yufeng/FindJobs-Agent) — 别再手动刷招聘网站：它按你的简历给岗位排序，还能跑模拟面试。
-- [**ContractGuard**](https://github.com/he-yufeng/ContractGuard) — 签字前先把有风险的条款挑出来：它读合同、标出危险点。
-- [**GitSense**](https://github.com/he-yufeng/GitSense) — 想给开源做贡献？它帮你找到值得做的 issue，还能估你的 PR 多大概率被合。
-- [**CodeABC**](https://github.com/he-yufeng/CodeABC) — 不会写代码也能看懂一个项目，专给小白做的。
-
-## 许可证
-
-MIT
+基于 [he-yufeng/RepoWiki](https://github.com/he-yufeng/RepoWiki)，MIT 许可，
+原始版权归 Yufeng He。

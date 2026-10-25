@@ -548,10 +548,10 @@ export default function Home() {
       </main>
 
       <footer className="pb-6 text-center text-xs text-slate-400">
-        <a href="https://github.com/he-yufeng/RepoWiki" className="hover:text-slate-600">
+        <a href="https://github.com/chenmudu/RepoWiki" className="hover:text-slate-600">
           RepoWiki
         </a>
-        {" · "}开源的 DeepWiki 替代品
+        {" · "}个人分支，上游 he-yufeng/RepoWiki
       </footer>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}

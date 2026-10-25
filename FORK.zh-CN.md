@@ -1,14 +1,29 @@
-# 本地补丁（基于 he-yufeng/RepoWiki）
+# 这是个人分支
 
-这份克隆包含**上游没有**的本地改动。之所以需要它们：上游版本不处理中文输出、
-Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
+[English](FORK.md)
+
+基于 [he-yufeng/RepoWiki](https://github.com/he-yufeng/RepoWiki) 的 fork，按我
+自己的使用习惯维护。MIT 许可，原始版权归 Yufeng He。不发布到 PyPI，也不提供
+支持。
 
 - 上游基线：`29d9029b4c770b66772c1d565f2d5b5980074147`（2026-10-23）
-- 本仓库（`chenmudu/RepoWiki`，`main` 分支）就是源头，下面每一项改动都已提交在这里。
+- 本仓库（`chenmudu/RepoWiki`，`main` 分支）就是源头，下面每一项改动都已提交在这里
 - 虚拟环境：任意一个执行过 `pip install -e ".[web]"` 的 venv；CLI 命令是 `repowiki`
 - 旧 wheel 安装（回滚用）：另一个装有 PyPI 0.6.0 wheel 的 venv
 
-## 每个补丁解决什么问题
+## 这里怎么决定一个改动
+
+- 先正确，再省钱，最后省时间。
+- 不需要 LLM 的路径不加 LLM 调用。确定性答案优先于生成答案；输入没变时缓存答案
+  优先于重跑。
+- 中文优先。Windows 是主平台，不是移植目标。
+- 单用户、只听回环地址。不做账号、多租户和远程部署加固。
+- 本地行为放在独立模块里。对上游文件的改动保持小且连续——一条声明、一个链接、
+  删掉一节——这样同步才便宜。任何行为改动都在下面的表里加一行。
+- README、FORK、CHANGELOG 属于本仓库自有内容。同步冲突时保留本地版本，上游新增
+  的功能说明需要时手工补进差异表。
+
+## 与上游的差异
 
 | 位置 | 问题 | 修法 |
 | --- | --- | --- |
@@ -40,9 +55,26 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 | `server/models.py`、`server/routers/chat.py` | 设置里选的模型只作用于扫描，问答不受影响 | `ChatRequest.model` 与扫描走同一套覆盖逻辑 |
 | `frontend/src/stores/wiki.ts` | 默认模型 `deepseek` 会覆盖服务端配置 | 模型默认留空（使用服务端配置）；持久化状态迁移为中文 |
 
+上游吸收了表里的某一项后，删掉那一行，并在 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
+记一笔。
+
+## 跟上游同步
+
+上游是 remote，不是事实源；这个 `main` 才是。
+
+```bash
+git remote add upstream https://github.com/he-yufeng/RepoWiki.git   # once
+git fetch upstream
+git merge upstream/main
+```
+
+冲突应该只落在 fork 声明、元数据链接和被删掉的上游章节上。如果冲突落在行为代码
+里，说明本地改动放错了地方。
+
 ## 项目历史
 
-服务端把项目的工作副本放在内存里，所以过去一重启就没了。现在注册表保存的是每次扫描的**输入**：
+服务端把项目的工作副本放在内存里，所以过去一重启就没了。现在注册表保存的是每次
+扫描的**输入**：
 
 - `~/.repowiki/projects.json` —— 每个仓库一条记录：ID、名称、本地路径或仓库地址、文件数、行数、语言、状态、错误、时间戳、扫描完成时工作区所在的提交，以及那次扫描的花费（请求数、token、成本）。
 - `GET /api/projects` —— 项目历史，最新的在前；正在扫描的项目会显示实时状态。每条记录带 `stale`、`changed_files` 和 `reindex_mode`。`?refresh=1` 会重跑漂移检测，而不吃 15 秒的结果缓存。
@@ -62,7 +94,7 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 - 完成不再需要手动刷新：列表里有 pending/scanning 时每 3 秒自动拉一次，一旦列表报 done，发起扫描的那个页面自己跳进项目。
 - 服务端只在被明确要求时才重建。
 
-## 重新构建
+## 构建与运行
 
 ```bash
 cd frontend
@@ -72,8 +104,6 @@ npm run build          # tsc --noEmit && vite build -> src/repowiki/server/stati
 cd ..
 pip install -e ".[web]"
 ```
-
-## 运行
 
 `repowiki serve` 会绑定 `0.0.0.0` 且没有鉴权，所以 WebUI 显式只监听回环地址
 （在仓库根目录、虚拟环境已激活的情况下）：
@@ -86,7 +116,8 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
 
 必须带 `PYTHONUTF8=1`：Windows 控制台代码页是 GBK，Rich 的 emoji 会让 CLI 崩掉。
 
-仓库外的一个小启动脚本跑的是同一条命令，双击即可。
+仓库外的一个小启动脚本跑的是同一条命令，双击即可；日常重新加载 Python 用桌面的
+"RepoWiki Restart" 快捷方式。
 
 ## 验证
 
@@ -97,9 +128,10 @@ repowiki diff <repo> HEAD~1..HEAD
 
 ## 回滚
 
-另建一个装 PyPI 0.6.0 wheel 的 venv 仍然可用，把 `repowiki` 指回它即可。
+另建一个装 PyPI 0.6.0 wheel 的 venv 仍然可用：
+`D:\Tools\repowiki-venv\Scripts\repowiki.exe`。把 `D:\Tools\repowiki.cmd`
+指回它即可切回旧版。
 
-## 回滚
+## 许可
 
-旧 wheel 安装仍可用：`D:\Tools\repowiki-venv\Scripts\repowiki.exe`。
-把 `D:\Tools\repowiki.cmd` 指回它即可切回旧版。
+MIT。[LICENSE](LICENSE) 保留上游版权声明；本地改动沿用同一许可。
