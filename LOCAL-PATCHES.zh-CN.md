@@ -36,6 +36,7 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 | `server/models.py`、`server/routers/scan.py`、`core/analyzer.py` | 重新索引只有一种尺寸：总是复用已缓存的分析结果，仓库结构变了也无法重生 | `ReindexRequest.full` 让本次运行跳过缓存读取、重生全部页面；结果仍会写回缓存 |
 | `llm/prompts.py`、`core/analyzer.py` | 增量会静默端出为另一套输入写的模块文档：缓存键只 hash 文件正文，而 prompt 还带了路径和项目概览；改了 prompt 模板也从不失效 | 模块键改为 hash 完整的 `files_context`（路径 + 语言 + 正文），概览从模块 prompt 中移除，`PROMPT_VERSION`（`prompts.py` 自身的源码哈希）进入每个键。现在键覆盖了 prompt 的全部输入 |
 | `llm/client.py`、`core/projects.py`、`server/routers/scan.py`、`frontend/src/pages/Home.tsx` | WebUI 看不出一次索引花了多少 LLM：token 一直在累计，然后被丢掉 | `LLMClient.total_requests` 统计真正发出的每个请求（含重试），扫描结束把 requests/tokens/cost 写进 `last_scan_usage`，项目卡显示 请求数 / in / out / $ |
+| `frontend/src/lib/api.ts`、`frontend/src/pages/Home.tsx` | 扫描完成只通知"发起它的那个页面实例"：刷新页面或 SSE 断开，结果就静默了；连接抖动甚至被当成扫描失败 | 项目列表成为唯一的完成判据 —— 只要有记录处于 pending/scanning 就每 3 秒轮询列表，卡片按服务端状态显示"索引中…"，进度流断开只代表文字停了，不再被判成失败 |
 | `server/models.py`、`server/routers/chat.py` | 设置里选的模型只作用于扫描，问答不受影响 | `ChatRequest.model` 与扫描走同一套覆盖逻辑 |
 | `frontend/src/stores/wiki.ts` | 默认模型 `deepseek` 会覆盖服务端配置 | 模型默认留空（使用服务端配置）；持久化状态迁移为中文 |
 
@@ -58,6 +59,7 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 - 上次索引之后源文件有变化时，项目卡显示"源文件已更新 N"，并说明重建的代价：只有新增和修改时是 可增量；出现删除、重命名、构建配置变化，或超过一半文件变化时是 需全量。主按钮直接用这个名字，旁边的「全量」是你不信任缓存时的出口。
 - 检测 diff 的基准是扫描完成时记下的提交——早于这个字段的记录，用其时间戳当时最新的提交——所以代价是一次 `git diff`，不读任何文件正文。不在 Git 仓库里时退回逐文件的 大小/mtime 比对。
 - 复用一条模块文档不再是近似做法：它的键覆盖了模块 prompt 的全部输入，所以复用的答案就等于同样的 prompt 现在会产出的答案。两种模式都不知道的是任何 prompt 都不曾包含的东西——依赖模块的内部实现——因此全量只是重新采样，不是更正确。
+- 完成不再需要手动刷新：列表里有 pending/scanning 时每 3 秒自动拉一次，一旦列表报 done，发起扫描的那个页面自己跳进项目。
 - 服务端只在被明确要求时才重建。
 
 ## 重新构建

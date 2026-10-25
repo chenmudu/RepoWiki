@@ -133,28 +133,24 @@ export async function deleteProject(projectId: string): Promise<void> {
   });
 }
 
+/**
+ * Live progress text for a running scan.
+ *
+ * Status is deliberately not decided here: the project list is the source of
+ * truth for when a scan is over, so a dropped connection is silence, not a
+ * failure verdict. Closing here only stops the text stream.
+ */
 export function streamScanProgress(
   projectId: string,
   onProgress: (step: string) => void,
-  onDone: (status: string) => void,
 ) {
   const es = new EventSource(`${BASE}/project/${projectId}/status`);
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
     if (data.step) onProgress(data.step);
-    if (data.status) {
-      onDone(data.status);
-      es.close();
-    }
-    if (data.error) {
-      onDone("error");
-      es.close();
-    }
+    if (data.status || data.error) es.close();
   };
-  es.onerror = () => {
-    es.close();
-    onDone("error");
-  };
+  es.onerror = () => es.close();
   return es;
 }
 

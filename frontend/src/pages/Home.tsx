@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   scanProject,
@@ -65,6 +65,9 @@ export default function Home() {
     () => localStorage.getItem(SELECTED_KEY) || "",
   );
   const [busyId, setBusyId] = useState("");
+  // the scan we are waiting on, if any. The project list settles it, not the
+  // progress stream, so a dropped connection cannot lose the finish event.
+  const waitingRef = useRef<{ id: string; target?: string; force: boolean } | null>(null);
   const {
     loading,
     setLoading,
@@ -93,13 +96,45 @@ export default function Home() {
           localStorage.removeItem(SELECTED_KEY);
           return "";
         });
+        settleWaiting(list);
       })
       .catch(() => setProjects([]));
   };
 
+  // a scan is over when the list says so: this is the single completion path,
+  // reachable whether or not the progress stream survived
+  function settleWaiting(list: ProjectRecord[]) {
+    const waiting = waitingRef.current;
+    if (!waiting) return;
+    const record = list.find((p) => p.id === waiting.id);
+    if (!record || (record.status !== "done" && record.status !== "error")) return;
+    waitingRef.current = null;
+    if (record.status === "done") {
+      void finishOpen(waiting.id, waiting.target);
+      return;
+    }
+    setLoading(false);
+    setError(
+      waiting.force
+        ? "重新索引失败，请查看服务端日志。"
+        : "索引失败，请查看服务端日志。",
+    );
+  }
+
   useEffect(() => {
     refreshProjects();
   }, []);
+
+  // while anything is indexing, keep pulling the list so completion and the
+  // stale badge land without the user having to refresh
+  const scanning = projects.some(
+    (p) => p.status === "pending" || p.status === "scanning",
+  );
+  useEffect(() => {
+    if (!scanning) return;
+    const timer = setInterval(() => refreshProjects(true), 3000);
+    return () => clearInterval(timer);
+  }, [scanning]);
 
   const selectProject = (id: string) => {
     localStorage.setItem(SELECTED_KEY, id);
@@ -142,19 +177,9 @@ export default function Home() {
       return;
     }
 
-    streamScanProgress(
-      info.id,
-      (step) => addProgress(step),
-      async (status) => {
-        if (status === "done") {
-          await finishOpen(info.id, target);
-        } else {
-          setError(force ? "重新索引失败，请查看服务端日志。" : "索引失败，请查看服务端日志。");
-          setLoading(false);
-          refreshProjects();
-        }
-      },
-    );
+    waitingRef.current = { id: info.id, target, force };
+    streamScanProgress(info.id, (step) => addProgress(step));
+    refreshProjects(true);
   }
 
   async function handleScan() {
@@ -180,19 +205,9 @@ export default function Home() {
       setProject(info);
       selectProject(info.id);
 
-      streamScanProgress(
-        info.id,
-        (step) => addProgress(step),
-        async (status) => {
-          if (status === "done") {
-            await finishOpen(info.id);
-          } else {
-            setError("扫描失败，请查看服务端日志。");
-            setLoading(false);
-            refreshProjects();
-          }
-        },
-      );
+      waitingRef.current = { id: info.id, force: false };
+      streamScanProgress(info.id, (step) => addProgress(step));
+      refreshProjects(true);
     } catch (e: any) {
       setError(e?.message || "扫描启动失败");
       setLoading(false);
@@ -266,7 +281,9 @@ export default function Home() {
 
   // a stale repo says what its rebuild costs; a current one just re-indexes
   const reindexLabel = (p: ProjectRecord) => {
-    if (busyId === p.id) return "索引中…";
+    if (busyId === p.id || p.status === "pending" || p.status === "scanning") {
+      return "索引中…";
+    }
     if (!p.stale) return "重新索引";
     return p.reindex_mode === "full" ? "全量重建" : "增量索引";
   };

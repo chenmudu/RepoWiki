@@ -38,6 +38,7 @@ checks, or the local-path flow in the web UI.
 | `server/models.py`, `server/routers/scan.py`, `core/analyzer.py` | Re-indexing was one size: cached analysis was always reused, so a repo whose structure moved could not be regenerated | `ReindexRequest.full` makes the run skip cache reads and regenerate every page; the results are still written to the cache |
 | `llm/prompts.py`, `core/analyzer.py` | Incremental runs silently served module docs written for different inputs: the key hashed only the file bodies, while the prompt also carried the paths and the project overview, and editing a template never invalidated anything | The module key now hashes the full `files_context` (path + language + body), the overview is no longer part of the module prompt, and `PROMPT_VERSION` — a hash of `prompts.py` itself — is embedded in every key. The key now covers everything the prompt is built from |
 | `llm/client.py`, `core/projects.py`, `server/routers/scan.py`, `frontend/src/pages/Home.tsx` | The web UI gave no sign of what an index cost: tokens were accumulated and thrown away | `LLMClient.total_requests` counts every request sent (retries included), a finished scan stores `last_scan_usage` on its record, and the project card shows requests / in / out / $ |
+| `frontend/src/lib/api.ts`, `frontend/src/pages/Home.tsx` | A finished scan only reached the one page instance that started it: reload the page, or lose the SSE connection, and the result was silent — a dropped connection was even reported as a scan failure | The project list is the single completion path. While any record is `pending`/`scanning` the list is polled every 3 s, the card reads 索引中… from the server's status, and a dropped progress stream means the text stopped, not that the scan failed |
 | `server/models.py`, `server/routers/chat.py` | The model picked in Settings applied to scans but not to Q&A | `ChatRequest.model` follows the same override as a scan |
 | `frontend/src/stores/wiki.ts` | The default model `deepseek` overrode the server-side config | Model defaults to empty ("use server config"); persisted state is migrated to Chinese |
 
@@ -90,6 +91,9 @@ it. The registry keeps the *input* of every scan instead:
   the same prompt would produce now. What neither mode can know is what no
   prompt ever contained — a dependency's internals — so a full run is a fresh
   sample, not a more correct one.
+- Finishing needs no manual refresh: while any record is `pending`/`scanning`
+  the list is polled every 3 s, and the scan's own page jumps into the project
+  as soon as the list reports `done`.
 - The server only rebuilds when it is asked to.
 
 ## Rebuild
