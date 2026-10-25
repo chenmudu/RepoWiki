@@ -67,21 +67,99 @@ class _StubLLM:
 
 def test_module_analysis_reuses_cache_on_second_run(tmp_path):
     from repowiki.core.analyzer import Analyzer
-    from repowiki.core.models import FileInfo, ProjectContext
+    from repowiki.core.models import FileInfo
 
     c = _make_cache(tmp_path)
     llm = _StubLLM()
     analyzer = Analyzer(llm=llm, cache=c, language="en")
     files = [FileInfo(path="mod/a.py", size=10, language="python", content="x = 1\n")]
-    project = ProjectContext(name="demo", root=str(tmp_path), files=files, file_tree="mod/a.py")
 
-    doc1, cached1 = asyncio.run(analyzer._analyze_one_module("mod", files, "summary", project))
-    doc2, cached2 = asyncio.run(analyzer._analyze_one_module("mod", files, "summary", project))
+    doc1, cached1 = asyncio.run(analyzer._analyze_one_module("mod", files))
+    doc2, cached2 = asyncio.run(analyzer._analyze_one_module("mod", files))
 
     assert cached1 is False
     assert cached2 is True
     assert llm.calls == 1
     assert doc1.name == doc2.name == "mod"
+    asyncio.run(c.close())
+
+
+def test_a_rename_inside_a_module_invalidates_its_cached_doc(tmp_path):
+    """the key covers the paths the prompt was built from, not just the bodies."""
+    from repowiki.core.analyzer import Analyzer
+    from repowiki.core.models import FileInfo
+
+    c = _make_cache(tmp_path)
+    llm = _StubLLM()
+    analyzer = Analyzer(llm=llm, cache=c, language="en")
+    body = "x = 1\n"
+
+    asyncio.run(
+        analyzer._analyze_one_module("mod", [FileInfo(path="mod/a.py", size=6, language="python", content=body)])
+    )
+    doc, cached = asyncio.run(
+        analyzer._analyze_one_module(
+            "mod", [FileInfo(path="mod/renamed.py", size=6, language="python", content=body)]
+        )
+    )
+
+    assert cached is False
+    assert llm.calls == 2
+    asyncio.run(c.close())
+
+
+def test_cache_keys_embed_the_prompt_template_version(tmp_path):
+    """editing a template must invalidate, or the cache keeps answering a
+    question nobody asked any more."""
+    import hashlib
+    from pathlib import Path
+
+    from repowiki.core.analyzer import Analyzer
+    from repowiki.llm import prompts
+
+    c = _make_cache(tmp_path)
+    llm = _StubLLM()
+    llm.model = "m1"
+
+    assert prompts.PROMPT_VERSION == hashlib.sha256(
+        Path(prompts.__file__).read_bytes()
+    ).hexdigest()[:12]
+    assert Analyzer(llm=llm, cache=c, language="en")._key_prefix == (
+        f"m1:en:p{prompts.PROMPT_VERSION}"
+    )
+    asyncio.run(c.close())
+
+
+def test_a_module_prompt_is_self_contained():
+    """nothing but the module's own files may feed it, or the key cannot cover it."""
+    from repowiki.llm.prompts import build_module_prompt
+
+    messages = build_module_prompt("core", "### core/a.py\n```python\nx = 1\n```", "en")
+
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert "Project:" not in messages[1]["content"]
+    assert "core/a.py" in messages[1]["content"]
+
+
+def test_a_full_reindex_ignores_the_cached_result(tmp_path):
+    from repowiki.core.analyzer import Analyzer
+    from repowiki.core.models import FileInfo
+
+    c = _make_cache(tmp_path)
+    files = [FileInfo(path="mod/a.py", size=10, language="python", content="x = 1\n")]
+    asyncio.run(
+        Analyzer(llm=_StubLLM(), cache=c, language="en")._analyze_one_module("mod", files)
+    )
+
+    llm = _StubLLM()
+    doc, cached = asyncio.run(
+        Analyzer(llm=llm, cache=c, language="en", use_cache=False)._analyze_one_module(
+            "mod", files
+        )
+    )
+
+    assert cached is False
+    assert llm.calls == 1
     asyncio.run(c.close())
 
 

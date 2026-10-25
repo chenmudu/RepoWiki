@@ -20,6 +20,7 @@ from repowiki.core.models import (
 from repowiki.core.skeleton import context_for_file
 from repowiki.llm.client import LLMClient
 from repowiki.llm.prompts import (
+    PROMPT_VERSION,
     build_architecture_prompt,
     build_module_prompt,
     build_overview_prompt,
@@ -40,15 +41,20 @@ class Analyzer:
         language: str = "en",
         concurrency: int = 5,
         max_tokens: int = 4096,
+        use_cache: bool = True,
     ):
         self.llm = llm
         self.cache = cache
         self.language = language
         self.max_tokens = max_tokens
+        # a full re-index regenerates every page: it writes the cache but does
+        # not read it, so unchanged modules are not silently served from before
+        self.use_cache = use_cache
         self._sem = asyncio.Semaphore(concurrency)
-        # cache keys embed model + language so switching either one misses the
-        # cache instead of serving stale output
-        self._key_prefix = f"{getattr(llm, 'model', '')}:{language}"
+        # cache keys embed model, language and the prompt templates themselves,
+        # so switching any of the three misses the cache instead of serving an
+        # answer written for different instructions
+        self._key_prefix = f"{getattr(llm, 'model', '')}:{language}:p{PROMPT_VERSION}"
         # page id -> cache key used this run; the incremental export compares
         # these against the state file to decide which pages to rewrite
         self.cache_keys: dict[str, str] = {}
@@ -59,6 +65,10 @@ class Analyzer:
     def _t(self, en: str, zh: str) -> str:
         """progress text in the wiki's language."""
         return zh if self.language == "zh" else en
+
+    async def _read_cache(self, cache_key: str) -> dict | list | None:
+        """a cached result, or None when this run is not allowed to reuse one."""
+        return await self.cache.get(cache_key) if self.use_cache else None
 
     async def analyze(
         self,
@@ -86,9 +96,7 @@ class Analyzer:
         modules_map = self._group_into_modules(project.files)
         progress(self._t(f"Analyzing {len(modules_map)} modules...",
                          f"正在分析 {len(modules_map)} 个模块..."))
-        module_docs = await self._analyze_modules(
-            modules_map, overview.one_liner, project, progress
-        )
+        module_docs = await self._analyze_modules(modules_map, progress)
 
         # 4. generate architecture diagram
         progress(self._t("Detecting architecture...", "正在识别架构..."))
@@ -158,7 +166,7 @@ class Analyzer:
     ) -> ProjectOverview:
         cache_key = f"{self._key_prefix}:overview:{tree_hash}"
         self.cache_keys["index"] = cache_key
-        cached = await self.cache.get(cache_key)
+        cached = await self._read_cache(cache_key)
         if cached:
             try:
                 return ProjectOverview(**cached)
@@ -201,13 +209,11 @@ class Analyzer:
     async def _analyze_modules(
         self,
         modules: dict[str, list[FileInfo]],
-        project_summary: str,
-        project: ProjectContext,
         progress: Callable[[str], None],
     ) -> list[ModuleDoc]:
         tasks = []
         for name, files in modules.items():
-            tasks.append(self._analyze_one_module(name, files, project_summary, project))
+            tasks.append(self._analyze_one_module(name, files))
 
         results = []
         reused = 0
@@ -239,32 +245,30 @@ class Analyzer:
         self,
         name: str,
         files: list[FileInfo],
-        project_summary: str,
-        project: ProjectContext,
     ) -> tuple[ModuleDoc | None, bool]:
         async with self._sem:
             # build context for this module
             files_text_parts = []
-            content_parts = []
             for f in files:
                 content = context_for_file(f.content if f.content else f.preview, f.language)
                 files_text_parts.append(
                     f"### {f.path} ({f.language})\n```{f.language}\n{content}\n```"
                 )
-                content_parts.append(content)
 
             files_context = "\n\n".join(files_text_parts)
-            cache_key = f"{self._key_prefix}:module:{name}:{content_hash(''.join(content_parts))}"
+            # the key covers every input the prompt is built from — path and
+            # language tag included — so a rename cannot leave a doc behind
+            cache_key = f"{self._key_prefix}:module:{name}:{content_hash(files_context)}"
             self.cache_keys[f"modules/{name}"] = cache_key
 
-            cached = await self.cache.get(cache_key)
+            cached = await self._read_cache(cache_key)
             if cached:
                 try:
                     return ModuleDoc(**cached), True
                 except Exception:
                     pass
 
-            messages = build_module_prompt(name, files_context, project_summary, self.language)
+            messages = build_module_prompt(name, files_context, self.language)
             data = await self._complete_json(messages)
             if not data or not isinstance(data, dict):
                 logger.warning("Failed to parse module '%s' JSON", name)
@@ -287,7 +291,7 @@ class Analyzer:
     ) -> ArchitectureDiagram:
         cache_key = f"{self._key_prefix}:arch:{tree_hash}"
         self.cache_keys["architecture"] = cache_key
-        cached = await self.cache.get(cache_key)
+        cached = await self._read_cache(cache_key)
         if cached:
             try:
                 return ArchitectureDiagram(**cached)
@@ -349,7 +353,7 @@ class Analyzer:
             f"{self._key_prefix}:guide:{tree_hash}:{content_hash(rankings + module_summaries)}"
         )
         self.cache_keys["reading-guide"] = cache_key
-        cached = await self.cache.get(cache_key)
+        cached = await self._read_cache(cache_key)
         if cached:
             try:
                 return ReadingGuide(**cached)

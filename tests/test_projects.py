@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -40,6 +42,25 @@ def test_registry_persists_records_across_instances(tmp_path):
     assert record.name == "demo"
     assert record.path == "/tmp/demo"
     assert record.created_at
+
+
+def test_registry_keeps_the_commit_the_tree_was_indexed_at(tmp_path):
+    path = tmp_path / "projects.json"
+    ProjectRegistry(path).upsert(
+        ProjectRecord(id="p1", path="/tmp/demo", last_indexed_commit="abc1234")
+    )
+
+    assert ProjectRegistry(path).get("p1").last_indexed_commit == "abc1234"
+
+
+def test_a_record_saved_before_the_commit_baseline_existed_still_loads(tmp_path):
+    path = tmp_path / "projects.json"
+    path.write_text(
+        json.dumps({"projects": [{"id": "p1", "name": "demo", "status": "done"}]}),
+        encoding="utf-8",
+    )
+
+    assert ProjectRegistry(path).get("p1").last_indexed_commit == ""
 
 
 def test_registry_lists_newest_first(tmp_path):
@@ -139,8 +160,8 @@ def test_reindex_reruns_the_scan_for_a_project_that_was_loaded_before_a_restart(
     registry.upsert(ProjectRecord(id="p1", name="demo", path="/tmp/demo", language="zh"))
     seen = {}
 
-    async def stub_scan(project_id, req, user_api_key):
-        seen["args"] = (project_id, req.path, req.language)
+    async def stub_scan(project_id, req, user_api_key, full=False):
+        seen["args"] = (project_id, req.path, req.language, full)
         app_module._projects[project_id]["info"].status = "done"
 
     monkeypatch.setattr(scan_module, "_run_scan", stub_scan)
@@ -149,14 +170,32 @@ def test_reindex_reruns_the_scan_for_a_project_that_was_loaded_before_a_restart(
         body = client.post("/api/projects/p1/reindex", json={}).json()
 
     assert body["id"] == "p1"
-    assert seen["args"] == ("p1", "/tmp/demo", "zh")
+    assert seen["args"] == ("p1", "/tmp/demo", "zh", False)
+    app_module._projects.pop("p1", None)
+
+
+def test_a_full_reindex_asks_the_scan_to_regenerate_every_page(monkeypatch, tmp_path):
+    registry = _registry(monkeypatch, tmp_path)
+    registry.upsert(ProjectRecord(id="p1", name="demo", path="/tmp/demo", language="zh"))
+    seen = {}
+
+    async def stub_scan(project_id, req, user_api_key, full=False):
+        seen["full"] = full
+        app_module._projects[project_id]["info"].status = "done"
+
+    monkeypatch.setattr(scan_module, "_run_scan", stub_scan)
+
+    with _client(monkeypatch, tmp_path) as client:
+        client.post("/api/projects/p1/reindex", json={"force": True, "full": True})
+
+    assert seen["full"] is True
     app_module._projects.pop("p1", None)
 
 
 def test_scanning_the_same_repo_twice_keeps_one_history_entry(monkeypatch, tmp_path):
     registry = _registry(monkeypatch, tmp_path)
 
-    async def stub_scan(project_id, req, user_api_key):
+    async def stub_scan(project_id, req, user_api_key, full=False):
         app_module._projects[project_id]["info"].status = "done"
 
     monkeypatch.setattr(scan_module, "_run_scan", stub_scan)

@@ -397,7 +397,8 @@ async def _run_analysis(
     # show token usage
     if llm.total_input_tokens or llm.total_output_tokens:
         console.print(
-            f"[dim]Tokens used: {llm.total_input_tokens:,} in / "
+            f"[dim]Tokens used: {llm.total_requests:,} requests, "
+            f"{llm.total_input_tokens:,} in / "
             f"{llm.total_output_tokens:,} out"
             f"{f' (${llm.total_cost:.4f})' if llm.total_cost else ''}[/]"
         )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +36,11 @@ class ProjectRecord:
     error: str = ""
     created_at: str = ""
     updated_at: str = ""
+    # the commit the tree was at when the index was built; the baseline the
+    # change detector diffs against. Empty for a pre-baseline record.
+    last_indexed_commit: str = ""
+    # what the most recent scan asked the provider for: requests, tokens, cost
+    last_scan_usage: dict = field(default_factory=dict)
 
 
 class ProjectRegistry:

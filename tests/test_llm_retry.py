@@ -60,6 +60,8 @@ def test_transient_error_retries_until_success(monkeypatch):
 
     assert asyncio.run(c.complete([{"role": "user", "content": "hi"}])) == "ok"
     assert fake.calls == 2
+    # what the provider bills: the retry counts, not just the logical call
+    assert c.total_requests == 2
     assert c.total_input_tokens == 1
 
 

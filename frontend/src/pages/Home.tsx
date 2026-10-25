@@ -84,8 +84,8 @@ export default function Home() {
   const isLocalPath = (value: string) =>
     /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("/") || value.startsWith("\\\\");
 
-  const refreshProjects = () => {
-    getProjects()
+  const refreshProjects = (bypassServerCache = false) => {
+    getProjects(bypassServerCache)
       .then((list) => {
         setProjects(list);
         setSelectedId((current) => {
@@ -114,8 +114,9 @@ export default function Home() {
     navigate(target ?? `/project/${id}`);
   };
 
-  // the one place a scan is started; `force` is the explicit re-index action
-  async function runScan(record: ProjectRecord, force: boolean, target?: string) {
+  // the one place a scan is started; `force` is the explicit re-index action,
+  // `full` adds the regeneration of every page instead of reusing cached modules
+  async function runScan(record: ProjectRecord, force: boolean, target?: string, full = false) {
     reset();
     setProjectId(record.id);
     setLoading(true);
@@ -124,7 +125,12 @@ export default function Home() {
       localStorage.setItem("repowiki_api_key", settings.apiKey);
     }
 
-    const info = await reindexProject(record.id, settings.language || undefined, force);
+    const info = await reindexProject(
+      record.id,
+      settings.language || undefined,
+      force,
+      full,
+    );
     const infoError = apiError(info);
     if (!info || infoError) {
       throw new Error(infoError || "启动索引失败");
@@ -215,13 +221,13 @@ export default function Home() {
     }
   }
 
-  async function rebuildProject(record: ProjectRecord) {
+  async function rebuildProject(record: ProjectRecord, full = false) {
     if (busyId || loading) return;
     selectProject(record.id);
     setError("");
     setBusyId(record.id);
     try {
-      await runScan(record, true, `/project/${record.id}`);
+      await runScan(record, true, `/project/${record.id}`, full);
     } catch (e: any) {
       setError(e?.message || "重新索引失败");
     } finally {
@@ -256,6 +262,23 @@ export default function Home() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  // a stale repo says what its rebuild costs; a current one just re-indexes
+  const reindexLabel = (p: ProjectRecord) => {
+    if (busyId === p.id) return "索引中…";
+    if (!p.stale) return "重新索引";
+    return p.reindex_mode === "full" ? "全量重建" : "增量索引";
+  };
+
+  // what the last scan spent, so 增量 and 全量 can be compared in real numbers
+  const usageLine = (p: ProjectRecord) => {
+    const u = p.last_scan_usage;
+    if (!u?.requests) return "";
+    const cost = u.cost ? ` · $${u.cost.toFixed(4)}` : "";
+    return `上次索引 ${u.requests} 次 LLM 请求 · ${(u.input_tokens ?? 0).toLocaleString()} in / ${(
+      u.output_tokens ?? 0
+    ).toLocaleString()} out${cost}`;
   };
 
   const busy = loading || !!busyId;
@@ -336,7 +359,7 @@ export default function Home() {
           <div className="mb-3 flex items-baseline justify-between">
             <h3 className="text-sm font-semibold text-slate-800">最近的项目</h3>
             <button
-              onClick={refreshProjects}
+              onClick={() => refreshProjects(true)}
               className="text-xs text-slate-500 hover:text-slate-700"
             >
               刷新
@@ -351,6 +374,7 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {projects.map((p) => {
                 const isSelected = p.id === selectedId;
+                const usage = usageLine(p);
                 return (
                   <div
                     key={p.id}
@@ -382,9 +406,10 @@ export default function Home() {
                             {p.stale && (
                               <span
                                 title={
-                                  p.changed_files
+                                  p.reason ||
+                                  (p.changed_files
                                     ? `上次索引后有 ${p.changed_files} 个文件发生变化`
-                                    : "上次索引后源文件有变化"
+                                    : "上次索引后源文件有变化")
                                 }
                                 className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800"
                               >
@@ -392,6 +417,8 @@ export default function Home() {
                                 {typeof p.changed_files === "number" && p.changed_files > 0
                                   ? ` ${p.changed_files}`
                                   : ""}
+                                {" · "}
+                                {p.reindex_mode === "full" ? "需全量" : "可增量"}
                               </span>
                             )}
                             <StatusBadge status={p.status} />
@@ -403,6 +430,11 @@ export default function Home() {
                         <span className="mt-2 block text-xs text-slate-400">
                           {p.file_count} 个文件 · {p.total_lines} 行 · {formatTime(p.updated_at)}
                         </span>
+                        {usage && (
+                          <span className="mt-0.5 block truncate font-mono text-[11px] text-slate-400">
+                            {usage}
+                          </span>
+                        )}
                       </span>
                     </button>
 
@@ -416,8 +448,11 @@ export default function Home() {
                         <ArrowRightIcon className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => rebuildProject(p)}
+                        onClick={() =>
+                          rebuildProject(p, p.stale && p.reindex_mode === "full")
+                        }
                         disabled={busy}
+                        title={p.stale ? p.reason : undefined}
                         className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
                           p.stale
                             ? "bg-amber-500 text-white hover:bg-amber-600"
@@ -425,8 +460,18 @@ export default function Home() {
                         }`}
                       >
                         <RefreshIcon className="h-3.5 w-3.5" />
-                        {busyId === p.id ? "索引中…" : "重新索引"}
+                        {reindexLabel(p)}
                       </button>
+                      {p.stale && p.reindex_mode !== "full" && (
+                        <button
+                          onClick={() => rebuildProject(p, true)}
+                          disabled={busy}
+                          title="忽略缓存，重新生成全部页面"
+                          className="rounded-md px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                        >
+                          全量
+                        </button>
+                      )}
                       <button
                         onClick={() => removeProject(p)}
                         disabled={busy}

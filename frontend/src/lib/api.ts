@@ -72,10 +72,23 @@ export interface ProjectRecord {
   // source tree moved since the last index (local-path projects only)
   stale?: boolean;
   changed_files?: number;
+  // what a rebuild has to cover: cached modules can be reused, or everything
+  last_indexed_commit?: string;
+  reindex_mode?: "incremental" | "full";
+  reason?: string;
+  // what the last completed scan asked the provider for
+  last_scan_usage?: {
+    requests?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost?: number;
+  };
 }
 
-export async function getProjects(): Promise<ProjectRecord[]> {
-  const res = await fetch(`${BASE}/projects`, { headers: getHeaders() });
+export async function getProjects(refresh = false): Promise<ProjectRecord[]> {
+  const res = await fetch(`${BASE}/projects${refresh ? "?refresh=1" : ""}`, {
+    headers: getHeaders(),
+  });
   const data = await res.json();
   return data.projects ?? [];
 }
@@ -84,11 +97,12 @@ export async function reindexProject(
   projectId: string,
   language?: string,
   force = false,
+  full = false,
 ): Promise<ProjectInfo> {
   const res = await fetch(`${BASE}/projects/${projectId}/reindex`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ language, force }),
+    body: JSON.stringify({ language, force, full }),
   });
   return res.json();
 }

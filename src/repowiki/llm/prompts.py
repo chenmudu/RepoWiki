@@ -2,8 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from pathlib import Path
+
+
+def _prompt_version() -> str:
+    """a hash of this module's own source.
+
+    A content-addressed cache can see the source code change, but never the
+    prompt that interprets it: edit a template and every cached answer keeps
+    being served as if it were fresh. Hashing the templates closes that hole
+    without asking anyone to remember a version number.
+    """
+    try:
+        raw = Path(__file__).read_bytes()
+    except OSError:
+        return "source-unavailable"
+    return hashlib.sha256(raw).hexdigest()[:12]
+
+
+PROMPT_VERSION = _prompt_version()
 
 
 def _lang_instruction(language: str) -> str:
@@ -63,9 +83,15 @@ def build_overview_prompt(file_tree: str, key_files: str, language: str = "en") 
 def build_module_prompt(
     module_name: str,
     files_context: str,
-    project_summary: str,
     language: str = "en",
 ) -> list[dict]:
+    """the module doc prompt: this module's files and nothing else.
+
+    It deliberately does not take the project overview. A module's cache key
+    covers its own files, so any input beyond them would be a source of silent
+    staleness — the overview moves on its own and would leave every module doc
+    describing an older project.
+    """
     return [
         {
             "role": "system",
@@ -80,7 +106,6 @@ def build_module_prompt(
         {
             "role": "user",
             "content": (
-                f"Project: {project_summary}\n\n"
                 f"Document the '{module_name}' module. Here are its files:\n\n"
                 f"{files_context}\n\n"
                 "Output JSON:\n"

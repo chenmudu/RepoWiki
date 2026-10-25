@@ -46,7 +46,7 @@ async def start_scan(req: ScanRequest, background_tasks: BackgroundTasks,
 
 
 @router.get("/projects")
-def list_projects():
+def list_projects(refresh: bool = False):
     """indexed projects, newest first; live scans report their current status."""
     projects = get_projects()
     records = []
@@ -60,7 +60,7 @@ def list_projects():
                 name=live["info"].name or record.name,
             )
         entry = asdict(record)
-        entry.update(_staleness(record))
+        entry.update(_staleness(record, bypass_cache=refresh))
         records.append(entry)
     return {"projects": records}
 
@@ -69,26 +69,32 @@ _STALE_TTL = 15.0
 _stale_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _staleness(record: ProjectRecord) -> dict:
-    """whether the source tree changed since the last index.
+def _staleness(record: ProjectRecord, bypass_cache: bool = False) -> dict:
+    """whether the source tree changed since the last index, and what a rebuild
+    would have to cover.
 
     Only local-path projects are checked: a cloned GitHub repo would need a
     fetch before the comparison means anything.
     """
-    empty = {"stale": False, "changed_files": 0}
+    empty = {"stale": False, "changed_files": 0, "reindex_mode": "incremental"}
     if record.status != "done" or not record.path:
         return empty
 
     key = f"{record.id}:{record.updated_at}"
     hit = _stale_cache.get(key)
-    if hit is not None and time.time() - hit[0] < _STALE_TTL:
+    if not bypass_cache and hit is not None and time.time() - hit[0] < _STALE_TTL:
         return hit[1]
 
-    from repowiki.core.staleness import detect_changes
+    from repowiki.core.staleness import detect_drift
     from repowiki.core.store import load_file_stats
 
-    stats = load_file_stats(record.id)
-    result = detect_changes(record.path, stats) if stats else empty
+    result = detect_drift(
+        record.path,
+        commit=record.last_indexed_commit,
+        indexed_at=record.updated_at,
+        stats=load_file_stats(record.id),
+        total_files=record.file_count,
+    )
 
     if len(_stale_cache) > 200:
         cutoff = time.time() - 60
@@ -106,13 +112,16 @@ async def reindex_project(project_id: str, background_tasks: BackgroundTasks,
 
     Without ``force`` this never repeats work: a project that is loaded (or
     whose artifacts are still on disk) comes back as it is. ``force`` is the
-    explicit "re-index this" action and always runs a fresh scan.
+    explicit "re-index this" action and always runs a fresh scan; ``full`` adds
+    to it by ignoring the analysis cache, so every page is regenerated rather
+    than rebuilt from what the source already proved unchanged.
     """
     record = get_registry().get(project_id)
     if record is None:
         return JSONResponse({"error": "项目不存在"}, status_code=404)
 
     force = bool(req.force) if req else False
+    full = bool(req.full) if req else False
     projects = get_projects()
     live = projects.get(project_id)
     if not force and live is not None and live["info"].status in ("pending", "scanning", "done"):
@@ -130,7 +139,7 @@ async def reindex_project(project_id: str, background_tasks: BackgroundTasks,
 
     scan_req = ScanRequest(path=record.path, url=record.url, language=language)
     _register(project_id, scan_req, "pending")
-    background_tasks.add_task(_run_scan, project_id, scan_req, x_api_key)
+    background_tasks.add_task(_run_scan, project_id, scan_req, x_api_key, full)
     return info
 
 
@@ -198,8 +207,14 @@ def _register(project_id: str, req: ScanRequest, status: str) -> ProjectRecord:
     return registry.upsert(record)
 
 
-async def _run_scan(project_id: str, req: ScanRequest, user_api_key: str | None):
-    """background task that runs the full scan + analysis pipeline."""
+async def _run_scan(
+    project_id: str, req: ScanRequest, user_api_key: str | None, full: bool = False
+):
+    """background task that runs the scan + analysis pipeline.
+
+    ``full`` skips the analysis cache, so every page is regenerated; the
+    default run reuses cached results for whatever the source left unchanged.
+    """
     projects = get_projects()
     proj = projects[project_id]
     proj["info"].status = "scanning"
@@ -264,6 +279,7 @@ async def _run_scan(project_id: str, req: ScanRequest, user_api_key: str | None)
             language=cfg.language,
             concurrency=cfg.concurrency,
             max_tokens=cfg.max_tokens,
+            use_cache=not full,
         )
 
         wiki_data = await analyzer.analyze(project, on_progress=progress)
@@ -274,8 +290,18 @@ async def _run_scan(project_id: str, req: ScanRequest, user_api_key: str | None)
 
         proj["wiki"] = wiki
         proj["info"].status = "done"
-        progress("完成！")
-        _save_scan_result(registry, project_id, proj)
+        usage = {
+            "requests": llm.total_requests,
+            "input_tokens": llm.total_input_tokens,
+            "output_tokens": llm.total_output_tokens,
+            "cost": round(llm.total_cost, 6),
+        }
+        progress(
+            f"完成！本次 LLM：{usage['requests']} 次请求 · "
+            f"{usage['input_tokens']:,} in / {usage['output_tokens']:,} out · "
+            f"${usage['cost']:.4f}"
+        )
+        _save_scan_result(registry, project_id, proj, usage)
         _store_artifacts(project_id, project, wiki, cfg.max_file_size)
 
     except Exception as e:
@@ -298,7 +324,9 @@ def _store_artifacts(project_id: str, project, wiki, max_file_size: int) -> None
         logger.warning("could not store artifacts for %s: %s", project_id, exc)
 
 
-def _save_scan_result(registry, project_id: str, proj: dict) -> None:
+def _save_scan_result(
+    registry, project_id: str, proj: dict, usage: dict | None = None
+) -> None:
     """record the outcome so the home page shows it and a later run can resume."""
     info = proj["info"]
     record = registry.get(project_id) or ProjectRecord(id=project_id)
@@ -307,4 +335,11 @@ def _save_scan_result(registry, project_id: str, proj: dict) -> None:
     record.total_lines = info.total_lines or record.total_lines
     record.status = info.status
     record.error = info.error
+    if usage is not None:
+        record.last_scan_usage = usage
+    if info.status == "done" and record.path:
+        # the diff baseline for "has this repo moved since we indexed it"
+        from repowiki.core.staleness import head_commit
+
+        record.last_indexed_commit = head_commit(record.path)
     registry.upsert(record)

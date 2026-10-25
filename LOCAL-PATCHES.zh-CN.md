@@ -31,7 +31,11 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 | `core/store.py`、`server/app.py` | 服务重启后内存里的项目全丢，打开项目要整个重扫 | Wiki 与扫描结果按项目 ID 落盘，首次访问时恢复 |
 | `server/routers/scan.py` | "打开项目"和"重新索引"是同一个调用 | `reindex` 只有 `force: true` 才重建，否则复用内存或磁盘 |
 | `server/routers/fs.py`、`frontend/src/components/PathPicker.tsx` | UI 要求用户手输绝对路径 | `GET /api/fs/browse` 列出盘符与子目录，供文件夹选择弹层使用 |
-| `core/staleness.py`、`server/routers/scan.py`、`frontend/` | 源文件改了以后已索引项目仍显示旧 Wiki，且没有任何提示 | 扫描时记录每个文件的 路径/大小/mtime；列表打出"源文件已更新 N"并高亮"重新索引"。检测只走一遍文件系统，不调用 LLM |
+| `core/staleness.py`、`server/routers/scan.py`、`frontend/` | 源文件改了以后已索引项目仍显示旧 Wiki，且没有任何提示 | 扫描时记下工作区当时所在的提交，列表用它 diff 仓库，打出"源文件已更新 N"。不在 Git 里的目录退回逐文件 大小/mtime 比对。检测不读文件内容、不调 LLM |
+| `core/staleness.py`、`frontend/src/pages/Home.tsx` | 提示只说"过期"，不说重建要花多少代价；而且在开始记录提交之前索引的项目永远标不出来 | 漂移改为 diff `last_indexed_commit`（老记录用扫描当时最新的提交）并给出分类：删除、重命名、构建配置变化，或超过一半文件变化 → 需全量，其余 → 可增量 |
+| `server/models.py`、`server/routers/scan.py`、`core/analyzer.py` | 重新索引只有一种尺寸：总是复用已缓存的分析结果，仓库结构变了也无法重生 | `ReindexRequest.full` 让本次运行跳过缓存读取、重生全部页面；结果仍会写回缓存 |
+| `llm/prompts.py`、`core/analyzer.py` | 增量会静默端出为另一套输入写的模块文档：缓存键只 hash 文件正文，而 prompt 还带了路径和项目概览；改了 prompt 模板也从不失效 | 模块键改为 hash 完整的 `files_context`（路径 + 语言 + 正文），概览从模块 prompt 中移除，`PROMPT_VERSION`（`prompts.py` 自身的源码哈希）进入每个键。现在键覆盖了 prompt 的全部输入 |
+| `llm/client.py`、`core/projects.py`、`server/routers/scan.py`、`frontend/src/pages/Home.tsx` | WebUI 看不出一次索引花了多少 LLM：token 一直在累计，然后被丢掉 | `LLMClient.total_requests` 统计真正发出的每个请求（含重试），扫描结束把 requests/tokens/cost 写进 `last_scan_usage`，项目卡显示 请求数 / in / out / $ |
 | `server/models.py`、`server/routers/chat.py` | 设置里选的模型只作用于扫描，问答不受影响 | `ChatRequest.model` 与扫描走同一套覆盖逻辑 |
 | `frontend/src/stores/wiki.ts` | 默认模型 `deepseek` 会覆盖服务端配置 | 模型默认留空（使用服务端配置）；持久化状态迁移为中文 |
 
@@ -39,9 +43,9 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 
 服务端把项目的工作副本放在内存里，所以过去一重启就没了。现在注册表保存的是每次扫描的**输入**：
 
-- `~/.repowiki/projects.json` —— 每个仓库一条记录：ID、名称、本地路径或仓库地址、文件数、行数、语言、状态、错误、时间戳。
-- `GET /api/projects` —— 项目历史，最新的在前；正在扫描的项目会显示实时状态。
-- `POST /api/projects/{id}/reindex` —— 让项目可用：内存里有就复用，没有就扫描；`force: true` 时强制重扫。
+- `~/.repowiki/projects.json` —— 每个仓库一条记录：ID、名称、本地路径或仓库地址、文件数、行数、语言、状态、错误、时间戳、扫描完成时工作区所在的提交，以及那次扫描的花费（请求数、token、成本）。
+- `GET /api/projects` —— 项目历史，最新的在前；正在扫描的项目会显示实时状态。每条记录带 `stale`、`changed_files` 和 `reindex_mode`。`?refresh=1` 会重跑漂移检测，而不吃 15 秒的结果缓存。
+- `POST /api/projects/{id}/reindex` —— 让项目可用：内存里有就复用，没有就扫描；`force: true` 时强制重扫，再加 `full: true` 就重生全部页面。
 - `~/.repowiki/projects/<id>/wiki.json` —— 生成的 Wiki（页面、侧边栏、知识卡片）。
 - `~/.repowiki/projects/<id>/project.json.gz` —— 扫描结果，含文件内容（kiro 实测 gzip 后 298 KB）。服务重启后首次访问即恢复，因此文件查看、仓库地图、Diff 和问答都不需要重扫。
 - 同一个路径或仓库地址重复扫描会复用同一个项目 ID，因此历史里每个仓库只有一条记录，`/project/<id>` 链接长期有效。
@@ -51,8 +55,10 @@ Windows Git 所有权检查，也不支持 WebUI 的本地路径流程。
 - **新项目**：输入路径或地址后点「生成 Wiki」，立即开始扫描，进度流式显示在页面上。
 - **已索引项目**：点「打开」直接读取已落盘的 Wiki，不触发任何扫描。重启后实测：一次点击，零次重索引请求。
 - **重新索引**：「重新索引」按钮每次都跑一遍新扫描（LLM 缓存让 kiro 约 6 秒完成）。
-- 上次索引之后源文件有变化时，项目卡会显示"源文件已更新 N"并把重新索引按钮变成琥珀色。检测只重新 stat 已知文件、并按扫描器同样的过滤规则走一遍目录，不读文件内容、不调 LLM。
-- 三个动作刻意分开：只有你明确要求时，服务端才会重建。
+- 上次索引之后源文件有变化时，项目卡显示"源文件已更新 N"，并说明重建的代价：只有新增和修改时是 可增量；出现删除、重命名、构建配置变化，或超过一半文件变化时是 需全量。主按钮直接用这个名字，旁边的「全量」是你不信任缓存时的出口。
+- 检测 diff 的基准是扫描完成时记下的提交——早于这个字段的记录，用其时间戳当时最新的提交——所以代价是一次 `git diff`，不读任何文件正文。不在 Git 仓库里时退回逐文件的 大小/mtime 比对。
+- 复用一条模块文档不再是近似做法：它的键覆盖了模块 prompt 的全部输入，所以复用的答案就等于同样的 prompt 现在会产出的答案。两种模式都不知道的是任何 prompt 都不曾包含的东西——依赖模块的内部实现——因此全量只是重新采样，不是更正确。
+- 服务端只在被明确要求时才重建。
 
 ## 重新构建
 
@@ -83,7 +89,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \
 ## 验证
 
 ```bash
-python -m pytest -q          # 247 passed
+python -m pytest -q          # 261 passed
 repowiki diff <repo> HEAD~1..HEAD
 ```
 

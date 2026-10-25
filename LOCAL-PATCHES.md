@@ -33,7 +33,11 @@ checks, or the local-path flow in the web UI.
 | `core/store.py`, `server/app.py` | A restart emptied the in-memory project store, so opening a project re-ran the whole scan | The wiki and the scanned project are stored per project id and restored on first access |
 | `server/routers/scan.py` | "Open a project" and "re-index it" were the same call | `reindex` only rebuilds with `force: true`; otherwise it reuses memory or disk |
 | `server/routers/fs.py`, `frontend/src/components/PathPicker.tsx` | The UI asked the user to type an absolute path | `GET /api/fs/browse` lists drives and sub-directories for a folder-picker dialog |
-| `core/staleness.py`, `server/routers/scan.py`, `frontend/` | An indexed project kept showing its old wiki after the source changed, with no hint | The scan stores path/size/mtime per file; the list flags 源文件已更新 with the count and emphasizes 重新索引. The check is one filesystem walk — no LLM calls |
+| `core/staleness.py`, `server/routers/scan.py`, `frontend/` | An indexed project kept showing its old wiki after the source changed, with no hint | The scan records the commit the tree was at; the list diffs the repo against that commit and flags 源文件已更新 with the count. A directory git does not track falls back to per-file size/mtime. Nothing reads file contents or calls an LLM |
+| `core/staleness.py`, `frontend/src/pages/Home.tsx` | The flag said "stale" but not what a rebuild would cost, and a project indexed before the stats existed could never be flagged | Drift is diffed against `last_indexed_commit` (or, for those older records, the commit that was current when the scan ran), and classified: deletions, renames, build-config edits or over half the repo changed mean 需全量, otherwise 可增量 |
+| `server/models.py`, `server/routers/scan.py`, `core/analyzer.py` | Re-indexing was one size: cached analysis was always reused, so a repo whose structure moved could not be regenerated | `ReindexRequest.full` makes the run skip cache reads and regenerate every page; the results are still written to the cache |
+| `llm/prompts.py`, `core/analyzer.py` | Incremental runs silently served module docs written for different inputs: the key hashed only the file bodies, while the prompt also carried the paths and the project overview, and editing a template never invalidated anything | The module key now hashes the full `files_context` (path + language + body), the overview is no longer part of the module prompt, and `PROMPT_VERSION` — a hash of `prompts.py` itself — is embedded in every key. The key now covers everything the prompt is built from |
+| `llm/client.py`, `core/projects.py`, `server/routers/scan.py`, `frontend/src/pages/Home.tsx` | The web UI gave no sign of what an index cost: tokens were accumulated and thrown away | `LLMClient.total_requests` counts every request sent (retries included), a finished scan stores `last_scan_usage` on its record, and the project card shows requests / in / out / $ |
 | `server/models.py`, `server/routers/chat.py` | The model picked in Settings applied to scans but not to Q&A | `ChatRequest.model` follows the same override as a scan |
 | `frontend/src/stores/wiki.ts` | The default model `deepseek` overrode the server-side config | Model defaults to empty ("use server config"); persisted state is migrated to Chinese |
 
@@ -43,11 +47,16 @@ The server keeps a project's working copy in memory, so a restart used to lose
 it. The registry keeps the *input* of every scan instead:
 
 - `~/.repowiki/projects.json` — one record per repo: id, name, path or url,
-  file count, lines, language, status, error, timestamps.
+  file count, lines, language, status, error, timestamps, the commit the tree
+  was at when the scan finished, and what that scan spent (requests, tokens,
+  cost).
 - `GET /api/projects` — the history, newest first; a scan that is running
-  reports its live status.
+  reports its live status. Each entry carries `stale`, `changed_files` and
+  `reindex_mode`. `?refresh=1` re-runs the drift check instead of reusing the
+  15-second cached answer.
 - `POST /api/projects/{id}/reindex` — make a project usable: reuse it when it
-  is loaded, otherwise scan it. `force: true` always runs a fresh scan.
+  is loaded, otherwise scan it. `force: true` always runs a fresh scan;
+  `full: true` on top of that regenerates every page.
 - `~/.repowiki/projects/<id>/wiki.json` — the generated wiki (pages, sidebar,
   knowledge cards).
 - `~/.repowiki/projects/<id>/project.json.gz` — the scanned project, file
@@ -66,12 +75,22 @@ it. The registry keeps the *input* of every scan instead:
   requests.
 - **Re-index**: 重新索引 always runs a fresh scan (the LLM cache keeps kiro
   around 6 s).
-- If the source tree changed after the last index, the project card shows
-  源文件已更新 with the number of changed files and the re-index button turns
-  amber. The check re-stats the known files and walks the tree with the
-  scanner's filters; it reads no file contents and calls no LLM.
-- These are three separate actions on purpose: the server only rebuilds when
-  it is asked to.
+- If the source tree moved after the last index, the card shows 源文件已更新 N
+  and says what a rebuild would cost: 可增量 when files were only added or
+  edited, 需全量 when something was deleted or renamed, when a build config
+  changed, or when over half the repo moved. The main button takes that name,
+  and a 全量 next to it is the escape hatch for when the cache itself is what
+  you distrust.
+- The check diffs the repo against the commit recorded when the scan finished
+  — for a record written before that existed, against the commit that was
+  current at its timestamp — so it costs one `git diff` and reads no file
+  body. Outside a git repo it falls back to the stored per-file size/mtime.
+- Reusing a cached module doc is not an approximation: the key covers every
+  input the module prompt is built from, so a reused answer is exactly what
+  the same prompt would produce now. What neither mode can know is what no
+  prompt ever contained — a dependency's internals — so a full run is a fresh
+  sample, not a more correct one.
+- The server only rebuilds when it is asked to.
 
 ## Rebuild
 
@@ -105,7 +124,7 @@ double-clicked console.
 ## Verify
 
 ```bash
-python -m pytest -q          # 247 passed
+python -m pytest -q          # 261 passed
 repowiki diff <repo> HEAD~1..HEAD
 ```
 

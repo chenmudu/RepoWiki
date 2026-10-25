@@ -49,6 +49,8 @@ class LLMClient:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost = 0.0
+        # every request actually sent, retries included: what the provider bills
+        self.total_requests = 0
 
     async def _complete_with_retry(self, kwargs: dict):
         """acompletion with backoff on transient failures. Returns the exception
@@ -56,6 +58,7 @@ class LLMClient:
         error-string contract."""
         for attempt in range(self.max_retries):
             try:
+                self.total_requests += 1
                 return await self._litellm.acompletion(**kwargs)
             except Exception as e:
                 if type(e).__name__ not in _TRANSIENT_ERRORS or attempt == self.max_retries - 1:

@@ -99,6 +99,7 @@ def test_analyzer_attaches_call_graph(tmp_path, monkeypatch):
     analyzer.llm = FakeLLM()
     analyzer.language = "en"
     analyzer.max_tokens = 100
+    analyzer.use_cache = True
     analyzer.degraded_modules = []
 
     class NoCache:

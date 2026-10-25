@@ -56,3 +56,6 @@ class ReindexRequest(BaseModel):
     model: str | None = None
     # true = re-index from scratch; false = only make the project usable
     force: bool = False
+    # true = regenerate every page; only meaningful together with force, where
+    # the default reuses cached analysis for whatever the source left unchanged
+    full: bool = False

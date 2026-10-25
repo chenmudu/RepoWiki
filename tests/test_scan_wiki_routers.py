@@ -76,7 +76,7 @@ def _seed_wiki_project(monkeypatch, *, wiki_ready: bool = True) -> None:
 def test_scan_registers_project_and_background_task_runs(monkeypatch, tmp_path):
     seen = {}
 
-    async def stub_scan(project_id, req, user_api_key):
+    async def stub_scan(project_id, req, user_api_key, full=False):
         proj = app_module._projects[project_id]
         proj["info"].status = "done"
         seen["args"] = (req.path, user_api_key)
